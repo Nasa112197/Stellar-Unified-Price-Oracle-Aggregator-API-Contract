@@ -1,0 +1,3 @@
+[workspace]
+members = ["contracts/price-oracle"]
+resolver = "2"
