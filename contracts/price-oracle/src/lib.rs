@@ -1,15 +1,15 @@
 #![no_std]
 
-mod types;
 mod events;
 mod storage;
+mod types;
 
 pub use types::{
     AggregatePrice, Asset, DataKey, ErrorCode, OracleSources, PriceData, PriceEntry,
     PriceHistoryEntry,
 };
 
-use soroban_sdk::{contract, contractimpl, Address, Env, String, Symbol, Vec, panic_with_error};
+use soroban_sdk::{contract, contractimpl, panic_with_error, Address, Env, String, Symbol, Vec};
 
 use crate::events::*;
 use crate::storage::*;
@@ -55,9 +55,15 @@ impl PriceOracleContract {
                 DEFAULT_MAX_HISTORY
             },
         );
-        env.storage().persistent().set(&DataKey::Resolution, &DEFAULT_RESOLUTION);
-        env.storage().persistent().set(&DataKey::Decimals, &decimals);
-        env.storage().persistent().set(&DataKey::Description, &description);
+        env.storage()
+            .persistent()
+            .set(&DataKey::Resolution, &DEFAULT_RESOLUTION);
+        env.storage()
+            .persistent()
+            .set(&DataKey::Decimals, &decimals);
+        env.storage()
+            .persistent()
+            .set(&DataKey::Description, &description);
         env.storage().persistent().set(
             &DataKey::OracleSources,
             &OracleSources {
@@ -73,6 +79,10 @@ impl PriceOracleContract {
     pub fn upgrade(env: Env, new_wasm_hash: soroban_sdk::BytesN<32>) {
         let admin = get_admin(&env);
         admin.require_auth();
+        ContractUpgradedEvent {
+            new_wasm_hash: new_wasm_hash.clone(),
+        }
+        .publish(&env);
         env.deployer().update_current_contract_wasm(new_wasm_hash);
     }
 
@@ -111,7 +121,10 @@ impl PriceOracleContract {
                 .persistent()
                 .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
         }
-        env.storage().persistent().get(&key).unwrap_or(DEFAULT_MIN_SOURCES)
+        env.storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or(DEFAULT_MIN_SOURCES)
     }
 
     pub fn set_max_history_length(env: Env, new_max: u32) {
@@ -130,7 +143,10 @@ impl PriceOracleContract {
                 .persistent()
                 .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
         }
-        env.storage().persistent().get(&key).unwrap_or(DEFAULT_MAX_HISTORY)
+        env.storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or(DEFAULT_MAX_HISTORY)
     }
 
     pub fn set_resolution(env: Env, new_resolution: u32) {
@@ -139,7 +155,10 @@ impl PriceOracleContract {
         env.storage()
             .persistent()
             .set(&DataKey::Resolution, &new_resolution);
-        ResolutionChangedEvent { value: new_resolution }.publish(&env);
+        ResolutionChangedEvent {
+            value: new_resolution,
+        }
+        .publish(&env);
     }
 
     pub fn get_resolution(env: Env) -> u32 {
@@ -149,14 +168,22 @@ impl PriceOracleContract {
                 .persistent()
                 .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
         }
-        env.storage().persistent().get(&key).unwrap_or(DEFAULT_RESOLUTION)
+        env.storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or(DEFAULT_RESOLUTION)
     }
 
     pub fn set_decimals(env: Env, new_decimals: u32) {
         let admin = get_admin(&env);
         admin.require_auth();
-        env.storage().persistent().set(&DataKey::Decimals, &new_decimals);
-        DecimalsChangedEvent { value: new_decimals }.publish(&env);
+        env.storage()
+            .persistent()
+            .set(&DataKey::Decimals, &new_decimals);
+        DecimalsChangedEvent {
+            value: new_decimals,
+        }
+        .publish(&env);
     }
 
     pub fn get_decimals(env: Env) -> u32 {
@@ -166,7 +193,10 @@ impl PriceOracleContract {
                 .persistent()
                 .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
         }
-        env.storage().persistent().get(&key).unwrap_or(DEFAULT_DECIMALS)
+        env.storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or(DEFAULT_DECIMALS)
     }
 
     pub fn set_description(env: Env, new_description: String) {
@@ -207,14 +237,15 @@ impl PriceOracleContract {
         env.storage()
             .persistent()
             .set(&DataKey::AssetRegistered(asset.clone()), &true);
-        env.storage()
-            .persistent()
-            .set(&DataKey::Aggregate(asset.clone()), &AggregatePrice {
+        env.storage().persistent().set(
+            &DataKey::Aggregate(asset.clone()),
+            &AggregatePrice {
                 price: 0,
                 timestamp: 0,
                 num_sources: 0,
                 decimals: Self::get_decimals(env.clone()),
-            });
+            },
+        );
         let mut assets = read_registered_assets(&env);
         assets.push_back(asset.clone());
         write_registered_assets(&env, &assets);
@@ -337,13 +368,7 @@ impl PriceOracleContract {
         read_oracle_sources(&env)
     }
 
-    pub fn submit_price(
-        env: Env,
-        source: Address,
-        asset: Address,
-        price: i128,
-        timestamp: u64,
-    ) {
+    pub fn submit_price(env: Env, source: Address, asset: Address, price: i128, timestamp: u64) {
         source.require_auth();
         check_source(&env, &source);
         check_registered_asset(&env, &asset);
@@ -405,11 +430,7 @@ impl PriceOracleContract {
             env.storage()
                 .persistent()
                 .extend_ttl(&agg_key, LEDGER_THRESHOLD, LEDGER_BUMP);
-            let prev_aggregate: AggregatePrice = env
-                .storage()
-                .persistent()
-                .get(&agg_key)
-                .unwrap();
+            let prev_aggregate: AggregatePrice = env.storage().persistent().get(&agg_key).unwrap();
 
             let aggregate = AggregatePrice {
                 price: median_price,
@@ -421,8 +442,7 @@ impl PriceOracleContract {
                 .persistent()
                 .set(&DataKey::Aggregate(asset.clone()), &aggregate);
 
-            if prev_aggregate.price != median_price
-                || prev_aggregate.timestamp != latest_timestamp
+            if prev_aggregate.price != median_price || prev_aggregate.timestamp != latest_timestamp
             {
                 let history_entry = PriceHistoryEntry {
                     price: median_price,
@@ -430,9 +450,10 @@ impl PriceOracleContract {
                     ledger: current_ledger,
                     num_sources: contributing_sources,
                 };
-                env.storage()
-                    .temporary()
-                    .set(&DataKey::PriceHistory(asset.clone(), current_ledger), &history_entry);
+                env.storage().temporary().set(
+                    &DataKey::PriceHistory(asset.clone(), current_ledger),
+                    &history_entry,
+                );
             }
 
             PriceAggregatedEvent {
@@ -462,11 +483,7 @@ impl PriceOracleContract {
         result
     }
 
-    pub fn get_source_price(
-        env: Env,
-        asset: Address,
-        source: Address,
-    ) -> PriceEntry {
+    pub fn get_source_price(env: Env, asset: Address, source: Address) -> PriceEntry {
         check_registered_asset(&env, &asset);
         check_source(&env, &source);
         let key = DataKey::Submission(asset, source);
@@ -494,11 +511,7 @@ impl PriceOracleContract {
         prices
     }
 
-    pub fn get_historical_price(
-        env: Env,
-        asset: Address,
-        ledger: u32,
-    ) -> PriceHistoryEntry {
+    pub fn get_historical_price(env: Env, asset: Address, ledger: u32) -> PriceHistoryEntry {
         check_registered_asset(&env, &asset);
         let key = DataKey::PriceHistory(asset, ledger);
         env.storage()
@@ -507,11 +520,7 @@ impl PriceOracleContract {
         env.storage().temporary().get(&key).unwrap()
     }
 
-    pub fn has_historical_price(
-        env: Env,
-        asset: Address,
-        ledger: u32,
-    ) -> bool {
+    pub fn has_historical_price(env: Env, asset: Address, ledger: u32) -> bool {
         if !env
             .storage()
             .persistent()
@@ -616,7 +625,11 @@ impl PriceOracleContract {
             return None;
         }
         let agg_key = DataKey::Aggregate(addr.clone());
-        if let Some(agg) = env.storage().persistent().get::<_, AggregatePrice>(&agg_key) {
+        if let Some(agg) = env
+            .storage()
+            .persistent()
+            .get::<_, AggregatePrice>(&agg_key)
+        {
             if agg.timestamp == timestamp {
                 return Some(PriceData {
                     price: agg.price,
@@ -627,9 +640,12 @@ impl PriceOracleContract {
         let current_ledger = env.ledger().sequence();
         let start = current_ledger.saturating_sub(1000);
         let mut ledger = current_ledger;
-        while ledger >= start {
+        loop {
             let hist_key = DataKey::PriceHistory(addr.clone(), ledger);
-            if let Some(entry) = env.storage().temporary().get::<_, PriceHistoryEntry>(&hist_key)
+            if let Some(entry) = env
+                .storage()
+                .temporary()
+                .get::<_, PriceHistoryEntry>(&hist_key)
             {
                 if entry.timestamp <= timestamp {
                     return Some(PriceData {
@@ -637,6 +653,9 @@ impl PriceOracleContract {
                         timestamp: entry.timestamp,
                     });
                 }
+            }
+            if ledger == start {
+                break;
             }
             ledger -= 1;
         }
@@ -660,20 +679,33 @@ impl PriceOracleContract {
         let max_to_check = (records * 10).min(10000);
         let start = current_ledger.saturating_sub(max_to_check);
         let mut ledger = current_ledger;
-        while ledger >= start && result.len() < records {
+        loop {
             let hist_key = DataKey::PriceHistory(addr.clone(), ledger);
-            if let Some(entry) = env.storage().temporary().get::<_, PriceHistoryEntry>(&hist_key)
+            if let Some(entry) = env
+                .storage()
+                .temporary()
+                .get::<_, PriceHistoryEntry>(&hist_key)
             {
                 result.push_back(PriceData {
                     price: entry.price,
                     timestamp: entry.timestamp,
                 });
+                if result.len() >= records {
+                    break;
+                }
+            }
+            if ledger == start {
+                break;
             }
             ledger -= 1;
         }
         if result.is_empty() {
             let agg_key = DataKey::Aggregate(addr);
-            if let Some(agg) = env.storage().persistent().get::<_, AggregatePrice>(&agg_key) {
+            if let Some(agg) = env
+                .storage()
+                .persistent()
+                .get::<_, AggregatePrice>(&agg_key)
+            {
                 result.push_back(PriceData {
                     price: agg.price,
                     timestamp: agg.timestamp,

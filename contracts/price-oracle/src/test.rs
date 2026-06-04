@@ -2,12 +2,10 @@
 
 use soroban_sdk::{
     testutils::{Address as _, Ledger, LedgerInfo},
-    Address, Bytes, Env, String,
+    Address, Bytes, Env, String, Symbol, Vec,
 };
 
-use crate::{
-    PriceEntry, PriceOracleContract, PriceOracleContractClient,
-};
+use crate::{Asset, PriceData, PriceEntry, PriceOracleContract, PriceOracleContractClient};
 
 fn create_contract(e: &Env) -> PriceOracleContractClient<'_> {
     e.mock_all_auths();
@@ -30,9 +28,7 @@ fn init_admin(client: &PriceOracleContractClient<'_>, admin: &Address) {
     );
 }
 
-fn setup_basic(
-    e: &Env,
-) -> (PriceOracleContractClient<'_>, Address, Address, Address) {
+fn setup_basic(e: &Env) -> (PriceOracleContractClient<'_>, Address, Address, Address) {
     let admin = Address::generate(e);
     let client = create_contract(e);
     init_admin(&client, &admin);
@@ -619,7 +615,9 @@ fn test_upgrade() {
     init_admin(&client, &admin);
 
     let wasm = include_bytes!("../../../target/wasm32v1-none/release/price_oracle.wasm");
-    let new_wasm_hash = e.deployer().upload_contract_wasm(Bytes::from_slice(&e, wasm));
+    let new_wasm_hash = e
+        .deployer()
+        .upload_contract_wasm(Bytes::from_slice(&e, wasm));
     client.upgrade(&new_wasm_hash);
 }
 
@@ -631,7 +629,9 @@ fn test_upgrade_unauthorized() {
     init_admin(&client, &admin);
 
     let wasm = include_bytes!("../../../target/wasm32v1-none/release/price_oracle.wasm");
-    let new_wasm_hash = e.deployer().upload_contract_wasm(Bytes::from_slice(&e, wasm));
+    let new_wasm_hash = e
+        .deployer()
+        .upload_contract_wasm(Bytes::from_slice(&e, wasm));
     clear_auth(&e);
     assert!(client.try_upgrade(&new_wasm_hash).is_err());
 }
@@ -837,4 +837,252 @@ fn test_price_source_not_affected_by_other_assets() {
 
     let price_b = client.get_price(&asset_b);
     assert_eq!(price_b.price, 0i128);
+}
+
+// ---- SEP-40 Oracle Interface Tests ----
+
+#[test]
+fn test_sep40_base() {
+    let e = Env::default();
+    let admin = Address::generate(&e);
+    let client = create_contract(&e);
+    init_admin(&client, &admin);
+
+    let result = client.base();
+    assert_eq!(result, Asset::Other(Symbol::new(&e, "USD")));
+}
+
+#[test]
+fn test_sep40_assets() {
+    let e = Env::default();
+    let admin = Address::generate(&e);
+    let client = create_contract(&e);
+    init_admin(&client, &admin);
+
+    let asset1 = Address::generate(&e);
+    let asset2 = Address::generate(&e);
+    client.register_asset(&asset1);
+    client.register_asset(&asset2);
+
+    let assets = client.assets();
+    assert_eq!(assets.len(), 2);
+    assert_eq!(assets.get_unchecked(0), Asset::Stellar(asset1));
+    assert_eq!(assets.get_unchecked(1), Asset::Stellar(asset2));
+}
+
+#[test]
+fn test_sep40_resolution() {
+    let e = Env::default();
+    let admin = Address::generate(&e);
+    let client = create_contract(&e);
+    init_admin(&client, &admin);
+
+    assert_eq!(client.resolution(), 0u32);
+
+    client.set_resolution(&300u32);
+    assert_eq!(client.resolution(), 300u32);
+}
+
+#[test]
+fn test_sep40_lastprice() {
+    let e = Env::default();
+    ledger_default(&e, 100, 1234567890);
+
+    let admin = Address::generate(&e);
+    let client = create_contract(&e);
+    init_admin(&client, &admin);
+
+    let source1 = Address::generate(&e);
+    let source2 = Address::generate(&e);
+    client.add_source(&source1, &String::from_str(&e, "Chainlink"));
+    client.add_source(&source2, &String::from_str(&e, "Band"));
+    client.set_min_sources_required(&2u32);
+
+    let asset = Address::generate(&e);
+    client.register_asset(&asset);
+
+    client.submit_price(&source1, &asset, &100i128, &1234567890);
+    client.submit_price(&source2, &asset, &110i128, &1234567890);
+
+    let result = client.lastprice(&Asset::Stellar(asset));
+    assert!(result.is_some());
+    let data: PriceData = result.unwrap();
+    assert_eq!(data.price, 105i128);
+    assert_eq!(data.timestamp, 1234567890u64);
+}
+
+#[test]
+fn test_sep40_lastprice_unregistered() {
+    let e = Env::default();
+    ledger_default(&e, 100, 1234567890);
+
+    let admin = Address::generate(&e);
+    let client = create_contract(&e);
+    init_admin(&client, &admin);
+
+    let unregistered = Address::generate(&e);
+    let result = client.lastprice(&Asset::Stellar(unregistered));
+    assert!(result.is_none());
+}
+
+#[test]
+fn test_sep40_lastprice_other() {
+    let e = Env::default();
+    let admin = Address::generate(&e);
+    let client = create_contract(&e);
+    init_admin(&client, &admin);
+
+    let result = client.lastprice(&Asset::Other(Symbol::new(&e, "EUR")));
+    assert!(result.is_none());
+}
+
+#[test]
+fn test_sep40_lastprice_stale() {
+    let e = Env::default();
+    ledger_default(&e, 100, 1234567890);
+
+    let admin = Address::generate(&e);
+    let client = create_contract(&e);
+    init_admin(&client, &admin);
+
+    let source1 = Address::generate(&e);
+    client.add_source(&source1, &String::from_str(&e, "Chainlink"));
+    client.set_min_sources_required(&1u32);
+    client.set_resolution(&10u32);
+
+    let asset = Address::generate(&e);
+    client.register_asset(&asset);
+
+    client.submit_price(&source1, &asset, &100i128, &1234567890);
+
+    // Advance ledger past resolution window
+    ledger_default(&e, 200, 1234567910);
+    let result = client.lastprice(&Asset::Stellar(asset));
+    assert!(result.is_none());
+}
+
+#[test]
+fn test_sep40_price() {
+    let e = Env::default();
+    ledger_default(&e, 100, 1234567890);
+
+    let admin = Address::generate(&e);
+    let client = create_contract(&e);
+    init_admin(&client, &admin);
+
+    let source1 = Address::generate(&e);
+    let source2 = Address::generate(&e);
+    client.add_source(&source1, &String::from_str(&e, "Chainlink"));
+    client.add_source(&source2, &String::from_str(&e, "Band"));
+    client.set_min_sources_required(&2u32);
+
+    let asset = Address::generate(&e);
+    client.register_asset(&asset);
+
+    client.submit_price(&source1, &asset, &100i128, &1234567890);
+    client.submit_price(&source2, &asset, &110i128, &1234567890);
+
+    let result = client.price(&Asset::Stellar(asset), &1234567890u64);
+    assert!(result.is_some());
+    let data: PriceData = result.unwrap();
+    assert_eq!(data.price, 105i128);
+}
+
+#[test]
+fn test_sep40_price_wrong_timestamp() {
+    let e = Env::default();
+    // Keep ledger low so history back-scan stays under footprint limit (100)
+    ledger_default(&e, 50, 1000);
+
+    let admin = Address::generate(&e);
+    let client = create_contract(&e);
+    init_admin(&client, &admin);
+
+    let source1 = Address::generate(&e);
+    client.add_source(&source1, &String::from_str(&e, "Chainlink"));
+    client.set_min_sources_required(&1u32);
+
+    let asset = Address::generate(&e);
+    client.register_asset(&asset);
+
+    client.submit_price(&source1, &asset, &100i128, &1000);
+
+    // Query with timestamp before data exists → should find no match
+    let result = client.price(&Asset::Stellar(asset), &999u64);
+    assert!(result.is_none());
+}
+
+#[test]
+fn test_sep40_price_other() {
+    let e = Env::default();
+    let admin = Address::generate(&e);
+    let client = create_contract(&e);
+    init_admin(&client, &admin);
+
+    let result = client.price(&Asset::Other(Symbol::new(&e, "BTC")), &1234567890u64);
+    assert!(result.is_none());
+}
+
+#[test]
+fn test_sep40_prices() {
+    let e = Env::default();
+    ledger_default(&e, 100, 1234567890);
+
+    let admin = Address::generate(&e);
+    let client = create_contract(&e);
+    init_admin(&client, &admin);
+
+    let source1 = Address::generate(&e);
+    let source2 = Address::generate(&e);
+    let source3 = Address::generate(&e);
+
+    client.add_source(&source1, &String::from_str(&e, "Chainlink"));
+    client.add_source(&source2, &String::from_str(&e, "Band"));
+    client.add_source(&source3, &String::from_str(&e, "Redstone"));
+    client.set_min_sources_required(&3u32);
+
+    let asset = Address::generate(&e);
+    client.register_asset(&asset);
+
+    client.submit_price(&source1, &asset, &100i128, &1234567890);
+    client.submit_price(&source2, &asset, &200i128, &1234567890);
+    client.submit_price(&source3, &asset, &300i128, &1234567890);
+
+    let result = client.prices(&Asset::Stellar(asset), &5u32);
+    assert!(result.is_some());
+    let prices: Vec<PriceData> = result.unwrap();
+    assert!(prices.len() >= 1);
+    assert_eq!(prices.get_unchecked(0).price, 200i128);
+}
+
+#[test]
+fn test_sep40_prices_empty() {
+    let e = Env::default();
+    ledger_default(&e, 100, 1234567890);
+
+    let admin = Address::generate(&e);
+    let client = create_contract(&e);
+    init_admin(&client, &admin);
+
+    let asset = Address::generate(&e);
+    client.register_asset(&asset);
+
+    let result = client.prices(&Asset::Stellar(asset), &5u32);
+    assert!(result.is_some());
+    let prices: Vec<PriceData> = result.unwrap();
+    // Falls back to aggregate entry with price 0 when no history exists
+    assert_eq!(prices.len(), 1);
+    assert_eq!(prices.get_unchecked(0).price, 0i128);
+}
+
+#[test]
+fn test_sep40_prices_unregistered_asset() {
+    let e = Env::default();
+    let admin = Address::generate(&e);
+    let client = create_contract(&e);
+    init_admin(&client, &admin);
+
+    let unregistered = Address::generate(&e);
+    let result = client.prices(&Asset::Stellar(unregistered), &5u32);
+    assert!(result.is_none());
 }

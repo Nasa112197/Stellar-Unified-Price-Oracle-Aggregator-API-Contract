@@ -78,7 +78,7 @@ pub fn compute_median(prices: &soroban_sdk::Vec<i128>) -> i128 {
         let mid = n / 2;
         let a = sorted.get_unchecked(mid - 1);
         let b = sorted.get_unchecked(mid);
-        (a + b) / 2
+        a + (b - a) / 2
     } else {
         sorted.get_unchecked(n / 2)
     }

@@ -86,3 +86,9 @@ pub struct DecimalsChangedEvent {
 pub struct DescriptionChangedEvent {
     pub description: String,
 }
+
+#[contractevent]
+#[derive(Clone)]
+pub struct ContractUpgradedEvent {
+    pub new_wasm_hash: soroban_sdk::BytesN<32>,
+}

@@ -90,7 +90,7 @@ cargo build -p price-oracle --target wasm32v1-none --release
 cargo test -p price-oracle --lib
 ```
 
-All **43 tests pass** with zero warnings.
+All **56 tests pass** with zero warnings.
 
 ### Deploy
 
