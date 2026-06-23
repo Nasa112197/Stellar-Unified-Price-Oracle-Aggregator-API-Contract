@@ -294,6 +294,31 @@ impl PriceOracleContract {
     pub fn add_source(env: Env, source: Address, name: String) {
         let admin = get_admin(&env);
         admin.require_auth();
+
+        // Validate: copy bytes into a stack buffer, find non-whitespace bounds
+        let name_len = name.len() as usize;
+        if name_len == 0 {
+            panic_with_error!(env, ErrorCode::InvalidSourceName);
+        }
+        // 256 bytes is a reasonable upper bound for a source name
+        let mut buf = [0u8; 256];
+        let buf_slice = &mut buf[..name_len.min(256)];
+        name.copy_into_slice(buf_slice);
+
+        let bytes = &buf_slice[..name_len.min(256)];
+        let mut start: usize = 0;
+        let mut end: usize = bytes.len();
+        while start < end && matches!(bytes[start], b' ' | b'\t' | b'\n' | b'\r') {
+            start += 1;
+        }
+        while end > start && matches!(bytes[end - 1], b' ' | b'\t' | b'\n' | b'\r') {
+            end -= 1;
+        }
+        if start >= end {
+            panic_with_error!(env, ErrorCode::InvalidSourceName);
+        }
+        let trimmed = String::from_bytes(&env, &bytes[start..end]);
+
         if env
             .storage()
             .persistent()
@@ -307,14 +332,13 @@ impl PriceOracleContract {
 
         let mut oracle_sources: OracleSources = read_oracle_sources(&env);
         oracle_sources.sources.push_back(source.clone());
-        let source_name = name.clone();
-        oracle_sources.metadata.set(source.clone(), name);
+        oracle_sources.metadata.set(source.clone(), trimmed.clone());
         env.storage()
             .persistent()
             .set(&DataKey::OracleSources, &oracle_sources);
         SourceAddedEvent {
             source: source.clone(),
-            name: source_name,
+            name: trimmed,
         }
         .publish(&env);
     }
@@ -466,21 +490,23 @@ impl PriceOracleContract {
         }
     }
 
-    pub fn get_price(env: Env, asset: Address) -> AggregatePrice {
+    pub fn get_price(env: Env, asset: Address, max_age_seconds: u64) -> Option<AggregatePrice> {
         check_registered_asset(&env, &asset);
         let key = DataKey::Aggregate(asset);
         env.storage()
             .persistent()
             .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
         let result: AggregatePrice = env.storage().persistent().get(&key).unwrap();
-        let resolution = Self::get_resolution(env.clone());
-        if resolution > 0 {
-            let ledger_time = env.ledger().timestamp();
-            if result.timestamp + (resolution as u64) < ledger_time {
-                panic_with_error!(env, ErrorCode::NoData);
+        if result.num_sources == 0 {
+            return None;
+        }
+        if max_age_seconds > 0 {
+            let now = env.ledger().timestamp();
+            if now > result.timestamp && now - result.timestamp > max_age_seconds {
+                return None;
             }
         }
-        result
+        Some(result)
     }
 
     pub fn get_source_price(env: Env, asset: Address, source: Address) -> PriceEntry {
@@ -509,6 +535,48 @@ impl PriceOracleContract {
             }
         }
         prices
+    }
+
+    /// Time-weighted average price over [start_ledger, end_ledger].
+    /// Uses stored historical aggregates: sum(price_i * duration_i) / total_duration
+    /// where duration_i is the time from entry i to the next entry (or the end entry).
+    /// Returns None if fewer than 2 history points exist in the range.
+    pub fn get_twap(env: Env, asset: Address, start_ledger: u32, end_ledger: u32) -> Option<i128> {
+        check_registered_asset(&env, &asset);
+        if end_ledger <= start_ledger {
+            return None;
+        }
+        // Collect all history entries in range
+        let mut entries: Vec<PriceHistoryEntry> = Vec::new(&env);
+        let mut ledger = start_ledger;
+        while ledger <= end_ledger {
+            let key = DataKey::PriceHistory(asset.clone(), ledger);
+            if env.storage().temporary().has(&key) {
+                let entry: PriceHistoryEntry = env.storage().temporary().get(&key).unwrap();
+                entries.push_back(entry);
+            }
+            ledger += 1;
+        }
+        if entries.len() < 2 {
+            return None;
+        }
+        let mut weighted_sum: i128 = 0;
+        let mut total_duration: u64 = 0;
+        let last_idx = entries.len() - 1;
+        for i in 0..last_idx {
+            let cur = entries.get_unchecked(i);
+            let next = entries.get_unchecked(i + 1);
+            if next.timestamp <= cur.timestamp {
+                continue;
+            }
+            let duration = next.timestamp - cur.timestamp;
+            weighted_sum += cur.price * (duration as i128);
+            total_duration += duration;
+        }
+        if total_duration == 0 {
+            return None;
+        }
+        Some(weighted_sum / (total_duration as i128))
     }
 
     pub fn get_historical_price(env: Env, asset: Address, ledger: u32) -> PriceHistoryEntry {

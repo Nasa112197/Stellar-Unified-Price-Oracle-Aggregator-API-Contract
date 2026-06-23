@@ -64,6 +64,7 @@ pub enum ErrorCode {
     InsufficientSources = 6,
     InvalidPrice = 7,
     NoData = 8,
+    InvalidSourceName = 9,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
