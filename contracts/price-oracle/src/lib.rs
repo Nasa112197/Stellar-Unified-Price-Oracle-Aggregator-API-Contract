@@ -91,6 +91,7 @@ impl PriceOracleContract {
         admin.require_auth();
         env.storage().persistent().set(&DataKey::Admin, &new_admin);
         AdminChangedEvent {
+            old_admin: admin,
             new_admin: new_admin.clone(),
         }
         .publish(&env);
@@ -251,6 +252,7 @@ impl PriceOracleContract {
         write_registered_assets(&env, &assets);
         AssetRegisteredEvent {
             asset: asset.clone(),
+            admin,
         }
         .publish(&env);
     }
@@ -276,6 +278,7 @@ impl PriceOracleContract {
         write_registered_assets(&env, &new_assets);
         AssetUnregisteredEvent {
             asset: asset.clone(),
+            admin,
         }
         .publish(&env);
     }
@@ -314,6 +317,7 @@ impl PriceOracleContract {
             .set(&DataKey::OracleSources, &oracle_sources);
         SourceAddedEvent {
             source: source.clone(),
+            admin,
             name: source_name,
         }
         .publish(&env);
@@ -349,6 +353,7 @@ impl PriceOracleContract {
             .set(&DataKey::OracleSources, &oracle_sources);
         SourceRemovedEvent {
             source: removed_source,
+            admin,
         }
         .publish(&env);
     }
@@ -454,15 +459,15 @@ impl PriceOracleContract {
                     &DataKey::PriceHistory(asset.clone(), current_ledger),
                     &history_entry,
                 );
-            }
 
-            PriceAggregatedEvent {
-                asset: asset.clone(),
-                price: median_price,
-                num_sources: contributing_sources,
-                timestamp: latest_timestamp,
+                PriceUpdatedEvent {
+                    asset: asset.clone(),
+                    new_price: median_price,
+                    old_price: prev_aggregate.price,
+                    timestamp: latest_timestamp,
+                }
+                .publish(&env);
             }
-            .publish(&env);
         }
     }
 
@@ -570,6 +575,10 @@ impl PriceOracleContract {
     }
 
     // ---- SEP-40 Oracle Interface ----
+
+    pub fn decimals(env: Env) -> u32 {
+        Self::get_decimals(env)
+    }
 
     pub fn base(env: Env) -> Asset {
         Asset::Other(Symbol::new(&env, "USD"))
