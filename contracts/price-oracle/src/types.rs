@@ -1,4 +1,6 @@
-use soroban_sdk::{contracterror, contracttype, Address, Map, String, Symbol, Vec};
+use soroban_sdk::{contracttype, Address, Map, String, Symbol, Vec};
+
+pub use crate::errors::ErrorCode;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[contracttype]
@@ -7,6 +9,7 @@ pub enum DataKey {
     Source(Address),
     AssetRegistered(Address),
     Submission(Address, Address),
+    SubmissionLedger(Address, Address),
     Aggregate(Address),
     PriceHistory(Address, u32),
     OracleSources,
@@ -50,20 +53,6 @@ pub struct PriceHistoryEntry {
 pub struct OracleSources {
     pub sources: Vec<Address>,
     pub metadata: Map<Address, String>,
-}
-
-#[contracterror]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ErrorCode {
-    NotAuthorized = 0,
-    AlreadyInitialized = 1,
-    AssetNotRegistered = 2,
-    AssetAlreadyRegistered = 3,
-    SourceAlreadyExists = 4,
-    SourceNotFound = 5,
-    InsufficientSources = 6,
-    InvalidPrice = 7,
-    NoData = 8,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
