@@ -1086,3 +1086,181 @@ fn test_sep40_prices_unregistered_asset() {
     let result = client.prices(&Asset::Stellar(unregistered), &5u32);
     assert!(result.is_none());
 }
+
+// ---- SEP-40 decimals() ----
+
+#[test]
+fn test_sep40_decimals() {
+    let e = Env::default();
+    let admin = Address::generate(&e);
+    let client = create_contract(&e);
+    init_admin(&client, &admin);
+
+    assert_eq!(client.decimals(), 18u32);
+
+    client.set_decimals(&8u32);
+    assert_eq!(client.decimals(), 8u32);
+    // Alias must match get_decimals
+    assert_eq!(client.decimals(), client.get_decimals());
+}
+
+// ---- Event emission tests ----
+
+#[test]
+fn test_event_source_added() {
+    let e = Env::default();
+    let admin = Address::generate(&e);
+    let client = create_contract(&e);
+    init_admin(&client, &admin);
+
+    let source = Address::generate(&e);
+    client.add_source(&source, &String::from_str(&e, "Chainlink"));
+
+    let events = e.events().all();
+    // Last event should be SourceAddedEvent
+    assert!(!events.is_empty());
+    let last = events.get_unchecked(events.len() - 1);
+    // topics: [event_name_sym, source, admin]; data: name
+    let (_, topics, _): (Address, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val) = last;
+    // First topic is the event type symbol "SourceAddedEvent", second is source, third is admin
+    assert_eq!(topics.len(), 3);
+}
+
+#[test]
+fn test_event_source_removed() {
+    let e = Env::default();
+    let admin = Address::generate(&e);
+    let client = create_contract(&e);
+    init_admin(&client, &admin);
+
+    let source = Address::generate(&e);
+    client.add_source(&source, &String::from_str(&e, "Test"));
+
+    let events_before = e.events().all().len();
+    client.remove_source(&source);
+
+    let events = e.events().all();
+    assert_eq!(events.len(), events_before + 1);
+}
+
+#[test]
+fn test_event_asset_registered() {
+    let e = Env::default();
+    let admin = Address::generate(&e);
+    let client = create_contract(&e);
+    init_admin(&client, &admin);
+
+    let asset = Address::generate(&e);
+    let events_before = e.events().all().len();
+    client.register_asset(&asset);
+
+    let events = e.events().all();
+    assert_eq!(events.len(), events_before + 1);
+}
+
+#[test]
+fn test_event_asset_unregistered() {
+    let e = Env::default();
+    let admin = Address::generate(&e);
+    let client = create_contract(&e);
+    init_admin(&client, &admin);
+
+    let asset = Address::generate(&e);
+    client.register_asset(&asset);
+
+    let events_before = e.events().all().len();
+    client.unregister_asset(&asset);
+
+    let events = e.events().all();
+    assert_eq!(events.len(), events_before + 1);
+}
+
+#[test]
+fn test_event_price_submitted() {
+    let e = Env::default();
+    ledger_default(&e, 100, 1000);
+    let (client, _admin, source1, asset1) = setup_basic(&e);
+
+    let events_before = e.events().all().len();
+    client.submit_price(&source1, &asset1, &100i128, &1000u64);
+
+    let events = e.events().all();
+    // At minimum PriceSubmittedEvent was emitted (price_updated may also fire)
+    assert!(events.len() > events_before);
+}
+
+#[test]
+fn test_event_price_updated_emitted_on_aggregate_change() {
+    let e = Env::default();
+    ledger_default(&e, 100, 1000);
+
+    let admin = Address::generate(&e);
+    let client = create_contract(&e);
+    init_admin(&client, &admin);
+
+    let source1 = Address::generate(&e);
+    let source2 = Address::generate(&e);
+    client.add_source(&source1, &String::from_str(&e, "A"));
+    client.add_source(&source2, &String::from_str(&e, "B"));
+    client.set_min_sources_required(&2u32);
+
+    let asset = Address::generate(&e);
+    client.register_asset(&asset);
+
+    // Submit two prices so aggregation fires and price_updated is emitted
+    client.submit_price(&source1, &asset, &100i128, &1000u64);
+    let events_after_first = e.events().all().len();
+
+    client.submit_price(&source2, &asset, &200i128, &1000u64);
+    let events_after_second = e.events().all().len();
+
+    // Second submit triggers aggregation → PriceSubmittedEvent + PriceUpdatedEvent
+    assert!(events_after_second > events_after_first + 1);
+}
+
+#[test]
+fn test_event_price_updated_not_emitted_when_unchanged() {
+    let e = Env::default();
+    ledger_default(&e, 100, 1000);
+
+    let admin = Address::generate(&e);
+    let client = create_contract(&e);
+    init_admin(&client, &admin);
+
+    let source1 = Address::generate(&e);
+    client.add_source(&source1, &String::from_str(&e, "A"));
+    client.set_min_sources_required(&1u32);
+
+    let asset = Address::generate(&e);
+    client.register_asset(&asset);
+
+    // First submit sets price to 100
+    client.submit_price(&source1, &asset, &100i128, &1000u64);
+    let events_after_first = e.events().all().len();
+
+    // Second submit with same price and same timestamp — no change, no price_updated
+    client.submit_price(&source1, &asset, &100i128, &1000u64);
+    let events_after_second = e.events().all().len();
+
+    // Only PriceSubmittedEvent added, no PriceUpdatedEvent
+    assert_eq!(events_after_second, events_after_first + 1);
+}
+
+#[test]
+fn test_event_admin_changed() {
+    let e = Env::default();
+    let admin = Address::generate(&e);
+    let client = create_contract(&e);
+    init_admin(&client, &admin);
+
+    let new_admin = Address::generate(&e);
+    let events_before = e.events().all().len();
+    client.set_admin(&new_admin);
+
+    let events = e.events().all();
+    assert_eq!(events.len(), events_before + 1);
+    // Topics: [event_sym, old_admin, new_admin]
+    let (_, topics, _): (Address, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val) =
+        events.get_unchecked(events.len() - 1);
+    assert_eq!(topics.len(), 3);
+}
