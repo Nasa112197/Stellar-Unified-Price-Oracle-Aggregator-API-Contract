@@ -5,7 +5,7 @@ use crate::events::{
     MaxHistoryChangedEvent, MinSourcesChangedEvent, ResolutionChangedEvent,
     TimestampThresholdChangedEvent,
 };
-use crate::storage::{get_admin, LEDGER_BUMP, LEDGER_THRESHOLD};
+use crate::storage::{get_admin, read_oracle_sources, LEDGER_BUMP, LEDGER_THRESHOLD};
 use crate::types::{DataKey, ErrorCode, OracleSources};
 
 const DEFAULT_MAX_HISTORY: u32 = 100;
@@ -97,6 +97,14 @@ pub fn get_admin_address(env: &Env) -> Address {
 pub fn set_min_sources_required(env: &Env, new_min: u32) {
     let admin = get_admin(env);
     admin.require_auth();
+    if new_min == 0 {
+        panic_with_error!(env, ErrorCode::InvalidConfiguration);
+    }
+    let oracle_sources = read_oracle_sources(env);
+    let source_count = oracle_sources.sources.len();
+    if source_count > 0 && new_min > source_count {
+        panic_with_error!(env, ErrorCode::InvalidConfiguration);
+    }
     env.storage()
         .persistent()
         .set(&DataKey::MinSourcesRequired, &new_min);
