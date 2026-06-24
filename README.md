@@ -89,6 +89,7 @@ A **decentralized price oracle aggregator** built on Soroban (Stellar smart cont
 
 | Event | Trigger | Topics | Data |
 |-------|---------|--------|------|
+| `ContractInitializedEvent` | `initialize()` | admin | min_sources, max_history, decimals, description |
 | `SourceAddedEvent` | `add_source()` | source, admin | name |
 | `SourceRemovedEvent` | `remove_source()` | source, admin | — |
 | `AssetRegisteredEvent` | `register_asset()` | asset, admin | — |
@@ -108,16 +109,16 @@ A **decentralized price oracle aggregator** built on Soroban (Stellar smart cont
 ### Build
 
 ```bash
-cargo build -p price-oracle --target wasm32v1-none --release
+make build
 ```
 
 ### Test
 
 ```bash
-cargo test -p price-oracle --lib
+make test
 ```
 
-All **65 tests pass** with zero warnings.
+All **79 tests pass** with zero warnings.
 
 ### Deploy
 

@@ -1015,3 +1015,164 @@ fn test_event_admin_changed() {
         events.get_unchecked(events.len() - 1);
     assert_eq!(topics.len(), 3);
 }
+
+// ---- Stress test: 50+ oracle sources ----
+
+#[test]
+fn test_stress_50_sources() {
+    let e = Env::default();
+    ledger_default(&e, 100, 1234567890);
+
+    let (client, _) = setup_contract(&e);
+    const N: u32 = 51;
+    client.set_min_sources_required(&N);
+
+    let asset = register_test_asset(&e, &client);
+
+    // Register 51 sources and submit prices 1..=51
+    let mut sources: soroban_sdk::Vec<Address> = soroban_sdk::Vec::new(&e);
+    for i in 1u32..=N {
+        let source = Address::generate(&e);
+        client.add_source(&source, &String::from_str(&e, "Source"));
+        sources.push_back(source.clone());
+        submit_test_price(&client, &source, &asset, i as i128, 1234567890);
+    }
+
+    // Median of 1..=51 is 26
+    let price = client.get_price(&asset, &0u64).unwrap();
+    assert_eq!(price.price, 26i128);
+    assert_eq!(price.num_sources, N);
+
+    let all = client.get_all_prices(&asset);
+    assert_eq!(all.len(), N);
+}
+
+// ---- Duplicate price median tests ----
+
+#[test]
+fn test_median_all_identical() {
+    let e = Env::default();
+    ledger_default(&e, 100, 1000);
+    let (client, _) = setup_contract(&e);
+    let source1 = register_test_source(&e, &client, "A");
+    let source2 = register_test_source(&e, &client, "B");
+    let source3 = register_test_source(&e, &client, "C");
+    client.set_min_sources_required(&3u32);
+    let asset = register_test_asset(&e, &client);
+
+    submit_test_price(&client, &source1, &asset, 100i128, 1000);
+    submit_test_price(&client, &source2, &asset, 100i128, 1000);
+    submit_test_price(&client, &source3, &asset, 100i128, 1000);
+
+    assert_eq!(client.get_price(&asset, &0u64).unwrap().price, 100i128);
+}
+
+#[test]
+fn test_median_majority_duplicate() {
+    let e = Env::default();
+    ledger_default(&e, 100, 1000);
+    let (client, _) = setup_contract(&e);
+    let s1 = register_test_source(&e, &client, "A");
+    let s2 = register_test_source(&e, &client, "B");
+    let s3 = register_test_source(&e, &client, "C");
+    let s4 = register_test_source(&e, &client, "D");
+    let s5 = register_test_source(&e, &client, "E");
+    client.set_min_sources_required(&5u32);
+    let asset = register_test_asset(&e, &client);
+
+    // [50, 200, 200, 200, 300] → median = 200
+    submit_test_price(&client, &s1, &asset, 50i128, 1000);
+    submit_test_price(&client, &s2, &asset, 200i128, 1000);
+    submit_test_price(&client, &s3, &asset, 200i128, 1000);
+    submit_test_price(&client, &s4, &asset, 200i128, 1000);
+    submit_test_price(&client, &s5, &asset, 300i128, 1000);
+
+    assert_eq!(client.get_price(&asset, &0u64).unwrap().price, 200i128);
+}
+
+#[test]
+fn test_median_two_unique_values() {
+    let e = Env::default();
+    ledger_default(&e, 100, 1000);
+    let (client, _) = setup_contract(&e);
+    let s1 = register_test_source(&e, &client, "A");
+    let s2 = register_test_source(&e, &client, "B");
+    let s3 = register_test_source(&e, &client, "C");
+    let s4 = register_test_source(&e, &client, "D");
+    client.set_min_sources_required(&4u32);
+    let asset = register_test_asset(&e, &client);
+
+    // [100, 100, 200, 200] → median = (100+200)/2 = 150
+    submit_test_price(&client, &s1, &asset, 100i128, 1000);
+    submit_test_price(&client, &s2, &asset, 100i128, 1000);
+    submit_test_price(&client, &s3, &asset, 200i128, 1000);
+    submit_test_price(&client, &s4, &asset, 200i128, 1000);
+
+    assert_eq!(client.get_price(&asset, &0u64).unwrap().price, 150i128);
+}
+
+#[test]
+fn test_median_duplicates_at_median_position() {
+    let e = Env::default();
+    ledger_default(&e, 100, 1000);
+    let (client, _) = setup_contract(&e);
+    let s1 = register_test_source(&e, &client, "A");
+    let s2 = register_test_source(&e, &client, "B");
+    let s3 = register_test_source(&e, &client, "C");
+    let s4 = register_test_source(&e, &client, "D");
+    let s5 = register_test_source(&e, &client, "E");
+    client.set_min_sources_required(&5u32);
+    let asset = register_test_asset(&e, &client);
+
+    // [10, 150, 150, 150, 999] → median = 150
+    submit_test_price(&client, &s1, &asset, 10i128, 1000);
+    submit_test_price(&client, &s2, &asset, 150i128, 1000);
+    submit_test_price(&client, &s3, &asset, 150i128, 1000);
+    submit_test_price(&client, &s4, &asset, 150i128, 1000);
+    submit_test_price(&client, &s5, &asset, 999i128, 1000);
+
+    assert_eq!(client.get_price(&asset, &0u64).unwrap().price, 150i128);
+}
+
+#[test]
+fn test_median_overflow_safe_with_large_duplicates() {
+    let e = Env::default();
+    ledger_default(&e, 100, 1000);
+    let (client, _) = setup_contract(&e);
+    let s1 = register_test_source(&e, &client, "A");
+    let s2 = register_test_source(&e, &client, "B");
+    client.set_min_sources_required(&2u32);
+    let asset = register_test_asset(&e, &client);
+
+    // Large values: overflow-safe formula (a/2 + b/2 + (a%2 + b%2)/2)
+    let big: i128 = i128::MAX / 2;
+    submit_test_price(&client, &s1, &asset, big, 1000);
+    submit_test_price(&client, &s2, &asset, big, 1000);
+
+    assert_eq!(client.get_price(&asset, &0u64).unwrap().price, big);
+}
+
+// ---- ContractInitializedEvent test ----
+
+#[test]
+fn test_event_contract_initialized() {
+    let e = Env::default();
+    let admin = Address::generate(&e);
+    let client = create_contract(&e);
+
+    let events_before = e.events().all().len();
+    client.initialize(
+        &admin,
+        &3u32,
+        &50u32,
+        &8u32,
+        &String::from_str(&e, "My Oracle"),
+    );
+
+    let events = e.events().all();
+    assert_eq!(events.len(), events_before + 1);
+    // Topics: [event_sym, admin]
+    let (_, topics, _): (Address, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val) =
+        events.get_unchecked(events.len() - 1);
+    assert_eq!(topics.len(), 2);
+}

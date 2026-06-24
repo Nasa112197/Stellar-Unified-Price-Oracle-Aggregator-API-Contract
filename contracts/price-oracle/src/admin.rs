@@ -1,8 +1,9 @@
 use soroban_sdk::{panic_with_error, Address, Env, String};
 
 use crate::events::{
-    AdminChangedEvent, ContractUpgradedEvent, DecimalsChangedEvent, DescriptionChangedEvent,
-    MaxHistoryChangedEvent, MinSourcesChangedEvent, ResolutionChangedEvent,
+    AdminChangedEvent, ContractInitializedEvent, ContractUpgradedEvent, DecimalsChangedEvent,
+    DescriptionChangedEvent, MaxHistoryChangedEvent, MinSourcesChangedEvent,
+    ResolutionChangedEvent,
 };
 use crate::storage::{get_admin, read_oracle_sources, LEDGER_BUMP, LEDGER_THRESHOLD};
 use crate::types::{DataKey, ErrorCode, OracleSources};
@@ -60,6 +61,14 @@ pub fn initialize(
     env.storage()
         .persistent()
         .set(&DataKey::RegisteredAssets, &soroban_sdk::Vec::<Address>::new(env));
+    ContractInitializedEvent {
+        admin,
+        min_sources: if min_sources_required > 0 { min_sources_required } else { DEFAULT_MIN_SOURCES },
+        max_history: if max_history_length > 0 { max_history_length } else { DEFAULT_MAX_HISTORY },
+        decimals,
+        description,
+    }
+    .publish(env);
 }
 
 pub fn upgrade(env: &Env, new_wasm_hash: soroban_sdk::BytesN<32>) {

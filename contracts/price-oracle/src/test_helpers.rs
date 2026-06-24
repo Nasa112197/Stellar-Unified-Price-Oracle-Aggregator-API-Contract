@@ -103,3 +103,26 @@ pub fn ledger_default(e: &Env, seq: u32, timestamp: u64) {
         max_entry_ttl: 4096,
     });
 }
+
+/// Initializes a contract with the given admin and sensible defaults.
+pub fn init_admin(client: &PriceOracleContractClient<'_>, admin: &Address) {
+    use soroban_sdk::String;
+    client.initialize(
+        admin,
+        &1u32,
+        &100u32,
+        &18u32,
+        &String::from_str(client.env(), "Stellar Price Oracle Aggregator"),
+    );
+}
+
+/// Sets up a basic contract with 1 source and 1 asset, min_sources=1.
+/// Returns (client, admin, source, asset).
+pub fn setup_basic(e: &Env) -> (PriceOracleContractClient<'_>, Address, Address, Address) {
+    let admin = Address::generate(e);
+    let client = create_contract(e);
+    init_admin(&client, &admin);
+    let source = register_test_source(e, &client, "Source");
+    let asset = register_test_asset(e, &client);
+    (client, admin, source, asset)
+}
