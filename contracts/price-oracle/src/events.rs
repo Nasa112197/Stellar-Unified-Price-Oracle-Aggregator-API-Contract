@@ -116,3 +116,18 @@ pub struct DecimalsChangedEvent {
 pub struct DescriptionChangedEvent {
     pub description: String,
 }
+
+#[contractevent]
+#[derive(Clone)]
+pub struct SourcesInsufficientEvent {
+    #[topic]
+    pub asset: Address,
+    pub current_source_count: u32,
+    pub min_sources_required: u32,
+}
+
+#[contractevent]
+#[derive(Clone)]
+pub struct TimestampThresholdChangedEvent {
+    pub value: u64,
+}
