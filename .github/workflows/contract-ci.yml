@@ -14,6 +14,6 @@ jobs:
       - uses: stellar/actions/setup-rust@v1
         with:
           target: wasm32v1-none
-      - run: cargo build -p price-oracle --target wasm32v1-none --release
-      - run: cargo test -p price-oracle --lib
-      - run: cargo clippy -p price-oracle -- -D warnings
+      - run: make build
+      - run: make test
+      - run: make lint

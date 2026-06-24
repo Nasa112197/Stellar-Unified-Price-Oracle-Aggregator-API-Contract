@@ -2,6 +2,17 @@ use soroban_sdk::{contractevent, Address, String};
 
 #[contractevent]
 #[derive(Clone)]
+pub struct ContractInitializedEvent {
+    #[topic]
+    pub admin: Address,
+    pub min_sources: u32,
+    pub max_history: u32,
+    pub decimals: u32,
+    pub description: String,
+}
+
+#[contractevent]
+#[derive(Clone)]
 pub struct PriceSubmittedEvent {
     #[topic]
     pub asset: Address,

@@ -25,13 +25,13 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Check formatting
-        run: cargo fmt --manifest-path contracts/price-oracle/Cargo.toml -- --check
+        run: make check
 
       - name: Build
-        run: cargo build --manifest-path contracts/price-oracle/Cargo.toml --verbose
+        run: make build
 
       - name: Run clippy
-        run: cargo clippy --manifest-path contracts/price-oracle/Cargo.toml -- -D warnings
+        run: make lint
 
       - name: Run tests
-        run: cargo test --manifest-path contracts/price-oracle/Cargo.toml --verbose
+        run: make test
