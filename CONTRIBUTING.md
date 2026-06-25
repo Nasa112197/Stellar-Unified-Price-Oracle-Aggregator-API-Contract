@@ -18,7 +18,7 @@ Thanks for your interest in contributing to the Stellar Unified Price Oracle Agg
    cargo test -p price-oracle --lib
    ```
 
-All 43 tests should pass with zero warnings.
+All 56 tests should pass with zero warnings.
 
 ## Code Style
 

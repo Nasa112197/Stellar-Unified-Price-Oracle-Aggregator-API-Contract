@@ -27,8 +27,6 @@ pub struct PriceOracleContract;
 
 #[contractimpl]
 impl PriceOracleContract {
-    pub fn __constructor(_env: Env) {}
-
     // --- Admin ---
 
     pub fn initialize(

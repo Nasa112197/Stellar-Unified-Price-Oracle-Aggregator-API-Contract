@@ -1,3 +1,5 @@
 /target
 **/*.wasm
 test_snapshots/
+.kiro/
+node_modules/
