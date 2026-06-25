@@ -1,9 +1,10 @@
 use soroban_sdk::{panic_with_error, Address, Env, Vec};
 
-use crate::admin::get_decimals;
 use crate::events::{AssetRegisteredEvent, AssetUnregisteredEvent};
-use crate::storage::{get_admin, read_registered_assets, write_registered_assets, LEDGER_BUMP, LEDGER_THRESHOLD};
-use crate::types::{AggregatePrice, DataKey, ErrorCode};
+use crate::storage::{
+    get_admin, read_registered_assets, write_registered_assets, LEDGER_BUMP, LEDGER_THRESHOLD,
+};
+use crate::types::{DataKey, ErrorCode};
 
 pub fn register_asset(env: &Env, asset: Address) {
     let admin = get_admin(env);
@@ -18,15 +19,6 @@ pub fn register_asset(env: &Env, asset: Address) {
     env.storage()
         .persistent()
         .set(&DataKey::AssetRegistered(asset.clone()), &true);
-    env.storage().persistent().set(
-        &DataKey::Aggregate(asset.clone()),
-        &AggregatePrice {
-            price: 0,
-            timestamp: 0,
-            num_sources: 0,
-            decimals: get_decimals(env),
-        },
-    );
     let mut assets = read_registered_assets(env);
     assets.push_back(asset.clone());
     write_registered_assets(env, &assets);

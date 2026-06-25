@@ -105,13 +105,12 @@ pub fn ledger_default(e: &Env, seq: u32, timestamp: u64) {
 
 /// Initializes an already-created contract with the given admin address.
 pub fn init_admin(client: &PriceOracleContractClient<'_>, admin: &Address) {
-    let e = client.env();
     client.initialize(
         admin,
         &1u32,
         &100u32,
         &18u32,
-        &String::from_str(e, "Stellar Price Oracle Aggregator"),
+        &String::from_str(&client.env, "Stellar Price Oracle Aggregator"),
     );
 }
 

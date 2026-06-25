@@ -37,7 +37,14 @@ impl PriceOracleContract {
         decimals: u32,
         description: String,
     ) {
-        admin::initialize(&env, admin, min_sources_required, max_history_length, decimals, description);
+        admin::initialize(
+            &env,
+            admin,
+            min_sources_required,
+            max_history_length,
+            decimals,
+            description,
+        );
     }
 
     pub fn upgrade(env: Env, new_wasm_hash: soroban_sdk::BytesN<32>) {
@@ -209,8 +216,6 @@ impl PriceOracleContract {
     }
 }
 
-#[cfg(test)]
-mod debug;
 #[cfg(test)]
 mod test_helpers;
 

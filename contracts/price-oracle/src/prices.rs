@@ -1,7 +1,12 @@
 use soroban_sdk::{panic_with_error, Address, Env, Vec};
 
-use crate::admin::{get_decimals, get_max_history_length, get_min_sources_required, get_resolution};
-use crate::events::{HistoryPrunedEvent, PriceAggregatedEvent, PriceSubmittedEvent};
+use crate::admin::{
+    get_decimals, get_max_history_length, get_min_sources_required, get_resolution,
+    get_timestamp_threshold,
+};
+use crate::events::{
+    HistoryPrunedEvent, PriceAggregatedEvent, PriceSubmittedEvent, SourcesInsufficientEvent,
+};
 use crate::storage::{
     check_registered_asset, check_source, compute_median, read_oracle_sources, LEDGER_BUMP,
     LEDGER_THRESHOLD,
@@ -76,10 +81,16 @@ pub fn submit_price(env: &Env, source: Address, asset: Address, price: i128, tim
 
         let current_ledger = env.ledger().sequence();
         let agg_key = DataKey::Aggregate(asset.clone());
-        env.storage()
-            .persistent()
-            .extend_ttl(&agg_key, LEDGER_THRESHOLD, LEDGER_BUMP);
-        let prev_aggregate: AggregatePrice = env.storage().persistent().get(&agg_key).unwrap();
+        let prev_aggregate: AggregatePrice =
+            env.storage()
+                .persistent()
+                .get(&agg_key)
+                .unwrap_or(AggregatePrice {
+                    price: 0,
+                    timestamp: 0,
+                    num_sources: 0,
+                    decimals,
+                });
 
         let aggregate = AggregatePrice {
             price: median_price,
@@ -90,6 +101,11 @@ pub fn submit_price(env: &Env, source: Address, asset: Address, price: i128, tim
         env.storage()
             .persistent()
             .set(&DataKey::Aggregate(asset.clone()), &aggregate);
+        env.storage().persistent().extend_ttl(
+            &DataKey::Aggregate(asset.clone()),
+            LEDGER_THRESHOLD,
+            LEDGER_BUMP,
+        );
 
         if prev_aggregate.price != median_price || prev_aggregate.timestamp != latest_timestamp {
             let history_entry = PriceHistoryEntry {

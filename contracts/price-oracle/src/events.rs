@@ -1,15 +1,7 @@
 use soroban_sdk::{contractevent, Address, String};
 
-#[contractevent]
-#[derive(Clone)]
-pub struct ContractInitializedEvent {
-    #[topic]
-    pub admin: Address,
-    pub min_sources: u32,
-    pub max_history: u32,
-    pub decimals: u32,
-    pub description: String,
-}
+// ContractInitializedEvent uses manual publishing due to String field
+// limitations with the macro in soroban-sdk 26.
 
 #[contractevent]
 #[derive(Clone)]
@@ -22,6 +14,7 @@ pub struct PriceSubmittedEvent {
     pub timestamp: u64,
 }
 
+#[allow(dead_code)]
 #[contractevent]
 #[derive(Clone)]
 pub struct PriceUpdatedEvent {
@@ -126,8 +119,45 @@ pub struct SourcesInsufficientEvent {
     pub min_sources_required: u32,
 }
 
+#[allow(deprecated)]
+pub fn emit_initialized(
+    env: &soroban_sdk::Env,
+    admin: Address,
+    min_sources: u32,
+    max_history: u32,
+    decimals: u32,
+    description: String,
+) {
+    let sym = soroban_sdk::symbol_short!("init");
+    env.events().publish(
+        (sym, admin),
+        (min_sources, max_history, decimals, description),
+    );
+}
+
 #[contractevent]
 #[derive(Clone)]
-pub struct TimestampThresholdChangedEvent {
-    pub value: u64,
+pub struct PriceAggregatedEvent {
+    #[topic]
+    pub asset: Address,
+    pub price: i128,
+    pub num_sources: u32,
+    pub timestamp: u64,
+}
+
+#[contractevent]
+#[derive(Clone)]
+pub struct HistoryPrunedEvent {
+    #[topic]
+    pub asset: Address,
+    pub pruned_ledger: u32,
+    pub remaining: u32,
+}
+
+// TimestampThresholdChangedEvent uses manual publishing (u64 value in
+// contractevent triggers a soroban-sdk 26 macro limitation).
+#[allow(deprecated)]
+pub fn emit_timestamp_threshold_changed(env: &soroban_sdk::Env, admin: Address, value: u64) {
+    let sym = soroban_sdk::symbol_short!("tthr");
+    env.events().publish((sym, admin), (value,));
 }

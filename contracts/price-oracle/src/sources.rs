@@ -27,6 +27,7 @@ pub fn add_source(env: &Env, source: Address, name: String) {
         .set(&DataKey::OracleSources, &oracle_sources);
     SourceAddedEvent {
         source: source.clone(),
+        admin: admin.clone(),
         name: source_name,
     }
     .publish(env);
@@ -62,6 +63,7 @@ pub fn remove_source(env: &Env, source: Address) {
         .set(&DataKey::OracleSources, &oracle_sources);
     SourceRemovedEvent {
         source: removed_source,
+        admin: admin.clone(),
     }
     .publish(env);
 }

@@ -24,11 +24,19 @@ A Soroban (Stellar smart contract) **price oracle aggregator** that collects pri
 │       ├── .cargo/config.toml   # WASM link flags
 │       ├── Cargo.toml
 │       └── src/
-│           ├── lib.rs           # Contract entrypoint + all endpoints
-│           ├── types.rs         # DataKey, error codes, structs
-│           ├── storage.rs       # Storage helpers + median computation
+│           ├── admin.rs         # Admin management functions
+│           ├── assets.rs        # Asset registration and management
+│           ├── errors.rs        # Error types and handling
 │           ├── events.rs        # Contract event definitions
-│           └── test.rs          # Test suite (56 tests)
+│           ├── history.rs       # Price history management
+│           ├── lib.rs           # Contract entrypoint + all endpoints
+│           ├── prices.rs        # Price submission and aggregation
+│           ├── prop_tests.rs    # Property-based tests (5 tests)
+│           ├── sources.rs       # Oracle source management
+│           ├── storage.rs       # Storage helpers + median computation
+│           ├── test.rs          # Test suite (71 tests)
+│           ├── test_helpers.rs  # Shared test utilities
+│           └── types.rs         # DataKey, error codes, structs
 ├── frontend/                    # (not yet created — place frontend here)
 ├── backend/                     # (not yet created — place backend here)
 ```
@@ -40,8 +48,11 @@ A Soroban (Stellar smart contract) **price oracle aggregator** that collects pri
 | `lib.rs` | Contract struct, all 26 public endpoints, SEP-40 interface. Imports helpers from sibling modules. |
 | `types.rs` | `DataKey` enum (storage keys), `ErrorCode` enum, all data structs (`PriceEntry`, `AggregatePrice`, `PriceHistoryEntry`, `OracleSources`, `Asset`, `PriceData`) |
 | `storage.rs` | `get_admin`, `check_source`, `check_registered_asset`, median sorting/`compute_median`, `read_*`/`write_*` helpers |
-| `events.rs` | 11 contract events (e.g. `PriceSubmittedEvent`, `SourceAddedEvent`, `ContractUpgradedEvent`) |
-| `test.rs` | 56 unit tests covering admin, sources, assets, submissions, queries, history, SEP-40, auth, upgrades |
+| `admin.rs` | Admin management functions |
+| `assets.rs` | Asset registration and management |
+| `errors.rs` | Error types and handling |
+| `events.rs` | 13 event types + 2 manual publish functions (`emit_initialized`, `emit_timestamp_threshold_changed`) |
+| `test.rs` | 76 unit tests covering admin, sources, assets, submissions, queries, history, SEP-40, auth, upgrades |
 
 ## What NOT to Push
 
@@ -80,7 +91,7 @@ cargo fmt --manifest-path contracts/price-oracle/Cargo.toml -- --check
 [ -d backend ] && { [ -f backend/Cargo.toml ] && cargo build --manifest-path backend/Cargo.toml || [ -f backend/package.json ] && cd backend && npm ci && npm run build; }
 ```
 
-All 56 tests must pass with zero compiler warnings and zero clippy warnings.
+All 76 tests must pass with zero compiler warnings and zero clippy warnings.
 
 ## Key Constraints
 

@@ -1,9 +1,9 @@
 use soroban_sdk::{panic_with_error, Address, Env, String};
 
 use crate::events::{
-    AdminChangedEvent, ContractUpgradedEvent, DecimalsChangedEvent, DescriptionChangedEvent,
-    MaxHistoryChangedEvent, MinSourcesChangedEvent, ResolutionChangedEvent,
-    TimestampThresholdChangedEvent,
+    emit_initialized, emit_timestamp_threshold_changed, AdminChangedEvent, ContractUpgradedEvent,
+    DecimalsChangedEvent, DescriptionChangedEvent, MaxHistoryChangedEvent, MinSourcesChangedEvent,
+    ResolutionChangedEvent,
 };
 use crate::storage::{get_admin, read_oracle_sources, LEDGER_BUMP, LEDGER_THRESHOLD};
 use crate::types::{DataKey, ErrorCode, OracleSources};
@@ -13,6 +13,7 @@ const DEFAULT_MIN_SOURCES: u32 = 1;
 const DEFAULT_DECIMALS: u32 = 18;
 pub const DEFAULT_RESOLUTION: u32 = 0;
 pub const DEFAULT_TIMESTAMP_THRESHOLD: u64 = 300; // 5 minutes
+const MAX_DESCRIPTION_LENGTH: u32 = 256;
 
 pub fn initialize(
     env: &Env,
@@ -62,17 +63,26 @@ pub fn initialize(
             metadata: soroban_sdk::Map::new(env),
         },
     );
-    env.storage()
-        .persistent()
-        .set(&DataKey::RegisteredAssets, &soroban_sdk::Vec::<Address>::new(env));
-    ContractInitializedEvent {
+    env.storage().persistent().set(
+        &DataKey::RegisteredAssets,
+        &soroban_sdk::Vec::<Address>::new(env),
+    );
+    emit_initialized(
+        env,
         admin,
-        min_sources: if min_sources_required > 0 { min_sources_required } else { DEFAULT_MIN_SOURCES },
-        max_history: if max_history_length > 0 { max_history_length } else { DEFAULT_MAX_HISTORY },
+        if min_sources_required > 0 {
+            min_sources_required
+        } else {
+            DEFAULT_MIN_SOURCES
+        },
+        if max_history_length > 0 {
+            max_history_length
+        } else {
+            DEFAULT_MAX_HISTORY
+        },
         decimals,
         description,
-    }
-    .publish(env);
+    );
 }
 
 pub fn upgrade(env: &Env, new_wasm_hash: soroban_sdk::BytesN<32>) {
@@ -241,7 +251,7 @@ pub fn set_timestamp_threshold(env: &Env, threshold: u64) {
     env.storage()
         .persistent()
         .set(&DataKey::TimestampThreshold, &threshold);
-    TimestampThresholdChangedEvent { value: threshold }.publish(env);
+    emit_timestamp_threshold_changed(env, admin, threshold);
 }
 
 pub fn get_timestamp_threshold(env: &Env) -> u64 {
