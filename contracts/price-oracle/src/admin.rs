@@ -1,8 +1,9 @@
 use soroban_sdk::{panic_with_error, Address, Env, String};
 
 use crate::events::{
-    emit_initialized, emit_timestamp_threshold_changed, AdminChangedEvent, AggregationMethodChangedEvent, ContractUpgradedEvent,
-    DecimalsChangedEvent, DescriptionChangedEvent, MaxHistoryChangedEvent, MaxInvalidSubmissionsChangedEvent, MinSourcesChangedEvent,
+    emit_initialized, emit_timestamp_threshold_changed, emit_max_price_deviation_changed,
+    AdminChangedEvent, ContractUpgradedEvent, DecimalsChangedEvent, DescriptionChangedEvent,
+    HeartbeatIntervalChangedEvent, MaxHistoryChangedEvent, MinSourcesChangedEvent,
     ResolutionChangedEvent,
 };
 use crate::storage::{get_admin, read_oracle_sources, LEDGER_BUMP, LEDGER_THRESHOLD};
@@ -14,7 +15,8 @@ const DEFAULT_DECIMALS: u32 = 18;
 pub const DEFAULT_RESOLUTION: u32 = 0;
 pub const DEFAULT_TIMESTAMP_THRESHOLD: u64 = 300; // 5 minutes
 const MAX_DESCRIPTION_LENGTH: u32 = 256;
-const DEFAULT_MAX_INVALID_SUBMISSIONS: u32 = 5;
+pub const DEFAULT_MAX_PRICE_DEVIATION: u32 = 500; // 5% in basis points
+pub const DEFAULT_HEARTBEAT_INTERVAL: u64 = 3600; // 1 hour
 
 pub fn initialize(
     env: &Env,
@@ -276,20 +278,20 @@ pub fn get_timestamp_threshold(env: &Env) -> u64 {
         .unwrap_or(DEFAULT_TIMESTAMP_THRESHOLD)
 }
 
-pub fn set_max_invalid_submissions(env: &Env, max_count: u32) {
+pub fn set_max_price_deviation(env: &Env, deviation_basis_points: u32) {
     let admin = get_admin(env);
     admin.require_auth();
-    if max_count == 0 {
+    if deviation_basis_points > 100000 {
         panic_with_error!(env, ErrorCode::InvalidConfiguration);
     }
     env.storage()
         .persistent()
-        .set(&DataKey::MaxInvalidSubmissions, &max_count);
-    MaxInvalidSubmissionsChangedEvent { value: max_count }.publish(env);
+        .set(&DataKey::MaxPriceDeviation, &deviation_basis_points);
+    emit_max_price_deviation_changed(env, admin, deviation_basis_points);
 }
 
-pub fn get_max_invalid_submissions(env: &Env) -> u32 {
-    let key = DataKey::MaxInvalidSubmissions;
+pub fn get_max_price_deviation(env: &Env) -> u32 {
+    let key = DataKey::MaxPriceDeviation;
     if env.storage().persistent().has(&key) {
         env.storage()
             .persistent()
@@ -298,23 +300,23 @@ pub fn get_max_invalid_submissions(env: &Env) -> u32 {
     env.storage()
         .persistent()
         .get(&key)
-        .unwrap_or(DEFAULT_MAX_INVALID_SUBMISSIONS)
+        .unwrap_or(DEFAULT_MAX_PRICE_DEVIATION)
 }
 
-pub fn set_aggregation_method(env: &Env, method: u32) {
+pub fn set_heartbeat_interval(env: &Env, interval: u64) {
     let admin = get_admin(env);
     admin.require_auth();
-    if method > 2 {
+    if interval == 0 {
         panic_with_error!(env, ErrorCode::InvalidConfiguration);
     }
     env.storage()
         .persistent()
-        .set(&DataKey::AggregationMethod, &method);
-    AggregationMethodChangedEvent { method }.publish(env);
+        .set(&DataKey::HeartbeatInterval, &interval);
+    HeartbeatIntervalChangedEvent { value: interval }.publish(env);
 }
 
-pub fn get_aggregation_method(env: &Env) -> u32 {
-    let key = DataKey::AggregationMethod;
+pub fn get_heartbeat_interval(env: &Env) -> u64 {
+    let key = DataKey::HeartbeatInterval;
     if env.storage().persistent().has(&key) {
         env.storage()
             .persistent()
@@ -323,5 +325,5 @@ pub fn get_aggregation_method(env: &Env) -> u32 {
     env.storage()
         .persistent()
         .get(&key)
-        .unwrap_or(AggregationMethod::Median as u32)
+        .unwrap_or(DEFAULT_HEARTBEAT_INTERVAL)
 }

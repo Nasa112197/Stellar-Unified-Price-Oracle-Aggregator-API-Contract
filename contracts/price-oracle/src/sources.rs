@@ -1,7 +1,11 @@
 use soroban_sdk::{panic_with_error, Address, Env, String, Vec};
 
-use crate::events::{SourceAddedEvent, SourceRemovedEvent, SourceSuspendedEvent, SourceUnsuspendedEvent};
-use crate::storage::{get_admin, read_oracle_sources, LEDGER_BUMP, LEDGER_THRESHOLD};
+use crate::events::{
+    SourceAddedEvent, SourceHeartbeatEvent, SourceInactiveEvent, SourceRemovedEvent,
+    SourceActiveAgainEvent,
+};
+use crate::admin::get_heartbeat_interval;
+use crate::storage::{get_admin, read_oracle_sources, is_source_inactive as check_source_inactive, mark_source_inactive, mark_source_active, LEDGER_BUMP, LEDGER_THRESHOLD};
 use crate::types::{DataKey, ErrorCode, OracleSources};
 
 pub fn add_source(env: &Env, source: Address, name: String) {
@@ -83,59 +87,92 @@ pub fn get_oracle_sources(env: &Env) -> OracleSources {
     read_oracle_sources(env)
 }
 
-pub fn is_source_suspended(env: &Env, source: Address) -> bool {
-    let key = DataKey::SourceSuspended(source.clone());
-    let suspended: bool = env.storage().persistent().get(&key).unwrap_or(false);
-    if suspended {
-        env.storage()
-            .persistent()
-            .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
+pub fn submit_heartbeat(env: &Env, source: Address) {
+    source.require_auth();
+    if !is_source(env, source.clone()) {
+        panic_with_error!(env, ErrorCode::SourceNotFound);
     }
-    suspended
-}
-
-pub fn record_invalid_submission(env: &Env, source: Address) {
-    let count_key = DataKey::SourceInvalidCount(source.clone());
-    let current_count: u32 = env.storage().persistent().get(&count_key).unwrap_or(0);
-    let new_count = current_count + 1;
+    
+    let timestamp = env.ledger().timestamp();
     env.storage()
         .persistent()
-        .set(&count_key, &new_count);
+        .set(&DataKey::SourceHeartbeat(source.clone()), &timestamp);
     
-    let max_invalid = crate::admin::get_max_invalid_submissions(env);
-    if new_count >= max_invalid {
-        env.storage()
-            .persistent()
-            .set(&DataKey::SourceSuspended(source.clone()), &true);
-        let admin = get_admin(env);
-        SourceSuspendedEvent {
+    // If source was inactive, mark as active again
+    let was_inactive = check_source_inactive(env, &source);
+    if was_inactive {
+        mark_source_active(env, &source);
+        SourceActiveAgainEvent {
             source: source.clone(),
-            admin,
-            reason: new_count,
+            timestamp,
         }
         .publish(env);
     }
-}
-
-pub fn unsuspend_source(env: &Env, source: Address) {
-    let admin = get_admin(env);
-    admin.require_auth();
-    if !env
-        .storage()
-        .persistent()
-        .has(&DataKey::SourceSuspended(source.clone()))
-    {
-        panic_with_error!(env, ErrorCode::SourceNotFound);
-    }
-    env.storage()
-        .persistent()
-        .remove(&DataKey::SourceSuspended(source.clone()));
-    env.storage()
-        .persistent()
-        .remove(&DataKey::SourceInvalidCount(source.clone()));
-    SourceUnsuspendedEvent {
+    
+    SourceHeartbeatEvent {
         source: source.clone(),
-        admin: admin.clone(),
+        timestamp,
     }
     .publish(env);
+}
+
+pub fn is_source_inactive(env: &Env, source: Address) -> bool {
+    // Check if source was marked as inactive
+    let is_marked_inactive = check_source_inactive(env, &source);
+    if is_marked_inactive {
+        return true;
+    }
+    
+    // Check heartbeat timeout
+    let key = DataKey::SourceHeartbeat(source.clone());
+    let last_heartbeat: Option<u64> = env.storage().persistent().get(&key);
+    
+    if let Some(hb_time) = last_heartbeat {
+        let interval = get_heartbeat_interval(env);
+        let current_time = env.ledger().timestamp();
+        if current_time > hb_time + interval {
+            // Mark as inactive
+            mark_source_inactive(env, &source);
+            SourceInactiveEvent {
+                source: source.clone(),
+                last_heartbeat: hb_time,
+            }
+            .publish(env);
+            return true;
+        }
+    } else {
+        // Never submitted heartbeat, but check if recently added
+        // If no heartbeat ever, consider inactive after interval
+        let current_time = env.ledger().timestamp();
+        let interval = get_heartbeat_interval(env);
+        // Allow grace period equal to interval from now
+        if current_time > interval {
+            mark_source_inactive(env, &source);
+            return true;
+        }
+    }
+    
+    false
+}
+
+pub fn get_inactive_sources(env: &Env) -> u32 {
+    let oracle_sources = read_oracle_sources(env);
+    let mut count: u32 = 0;
+    
+    for i in 0..oracle_sources.sources.len() {
+        let source = oracle_sources.sources.get_unchecked(i);
+        if is_source_inactive(env, source) {
+            count += 1;
+        }
+    }
+    
+    count
+}
+
+pub fn get_source_last_heartbeat(env: &Env, source: Address) -> u64 {
+    let key = DataKey::SourceHeartbeat(source);
+    env.storage()
+        .persistent()
+        .get(&key)
+        .unwrap_or(0u64)
 }

@@ -21,9 +21,11 @@ pub enum DataKey {
     Decimals,
     Description,
     TimestampThreshold,
-    SourceSuspended(Address),
-    SourceInvalidCount(Address),
-    MaxInvalidSubmissions,
+    MaxPriceDeviation,
+    SubmissionDeviant(Address, Address),
+    SourceHeartbeat(Address),
+    HeartbeatInterval,
+    InactiveSource(Address),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
