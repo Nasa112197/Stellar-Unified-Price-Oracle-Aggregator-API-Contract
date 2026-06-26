@@ -175,3 +175,34 @@ pub struct ContractUnpausedEvent {
     #[topic]
     pub admin: Address,
 }
+
+#[contractevent]
+#[derive(Clone)]
+pub struct OperationProposedEvent {
+    #[topic]
+    pub operation_id: u32,
+    pub op_type: u32,
+    #[topic]
+    pub proposed_by: Address,
+    pub proposed_ledger: u32,
+}
+
+#[contractevent]
+#[derive(Clone)]
+pub struct OperationExecutedEvent {
+    #[topic]
+    pub operation_id: u32,
+    pub op_type: u32,
+    #[topic]
+    pub executed_by: Address,
+}
+
+#[contractevent]
+#[derive(Clone)]
+pub struct OperationCancelledEvent {
+    #[topic]
+    pub operation_id: u32,
+    pub op_type: u32,
+    #[topic]
+    pub cancelled_by: Address,
+}

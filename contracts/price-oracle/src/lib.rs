@@ -9,6 +9,7 @@ mod pause;
 mod prices;
 mod sources;
 mod storage;
+mod timelock;
 mod types;
 
 #[cfg(test)]
@@ -228,6 +229,39 @@ impl PriceOracleContract {
 
     pub fn is_paused(env: Env) -> bool {
         pause::is_paused(&env)
+    }
+
+    // --- Timelock ---
+
+    pub fn propose_operation(env: Env, op_type: u32, data: soroban_sdk::Bytes) -> u32 {
+        let op_enum = match op_type {
+            0 => types::OperationType::Upgrade,
+            1 => types::OperationType::SetAdmin,
+            2 => types::OperationType::SetMinSources,
+            3 => types::OperationType::SetMaxHistory,
+            4 => types::OperationType::SetResolution,
+            5 => types::OperationType::SetDecimals,
+            6 => types::OperationType::SetDescription,
+            7 => types::OperationType::SetTimestampThreshold,
+            _ => panic!("Invalid operation type"),
+        };
+        timelock::propose_operation(&env, op_enum, &data)
+    }
+
+    pub fn execute_operation(env: Env, op_id: u32) {
+        timelock::execute_operation(&env, op_id);
+    }
+
+    pub fn cancel_operation(env: Env, op_id: u32) {
+        timelock::cancel_operation(&env, op_id);
+    }
+
+    pub fn get_timelock_duration(env: Env) -> u32 {
+        timelock::get_timelock_duration(&env)
+    }
+
+    pub fn set_timelock_duration(env: Env, duration: u32) {
+        timelock::set_timelock_duration(&env, duration);
     }
 }
 

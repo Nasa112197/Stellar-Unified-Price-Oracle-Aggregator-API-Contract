@@ -16,4 +16,6 @@ pub enum ErrorCode {
     InvalidConfiguration = 10,
     DescriptionTooLong = 11,
     ContractPaused = 12,
+    TimelockNotReady = 13,
+    OperationNotFound = 14,
 }

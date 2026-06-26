@@ -1174,3 +1174,128 @@ fn test_admin_functions_when_paused() {
     client.unpause();
     assert!(!client.is_paused());
 }
+
+
+// ========== Issue #57: Timelock Tests ==========
+
+#[test]
+fn test_propose_operation() {
+    let e = Env::default();
+    let (client, _) = setup_contract(&e);
+    
+    let timelock_bytes = soroban_sdk::Bytes::from_array(&e, &[1u8; 32]);
+    let op_id = client.propose_operation(&0u32, &timelock_bytes);
+    
+    assert_eq!(op_id, 1u32);
+}
+
+#[test]
+fn test_propose_operation_unauthorized() {
+    let e = Env::default();
+    let (client, _) = setup_contract(&e);
+    
+    clear_auth(&e);
+    let timelock_bytes = soroban_sdk::Bytes::from_array(&e, &[1u8; 32]);
+    assert!(client.try_propose_operation(&0u32, &timelock_bytes).is_err());
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #13)")]
+fn test_execute_operation_too_early() {
+    let e = Env::default();
+    let (client, _) = setup_contract(&e);
+    
+    ledger_default(&e, 100, 1000);
+    let timelock_bytes = soroban_sdk::Bytes::from_array(&e, &[1u8; 32]);
+    let op_id = client.propose_operation(&0u32, &timelock_bytes);
+    
+    ledger_default(&e, 105, 1000);
+    client.execute_operation(&op_id);
+}
+
+#[test]
+fn test_execute_operation_after_timelock() {
+    let e = Env::default();
+    let (client, _) = setup_contract(&e);
+    
+    ledger_default(&e, 100, 1000);
+    let timelock_bytes = soroban_sdk::Bytes::from_array(&e, &[1u8; 32]);
+    let op_id = client.propose_operation(&0u32, &timelock_bytes);
+    
+    ledger_default(&e, 111, 1000);
+    client.execute_operation(&op_id);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #14)")]
+fn test_cancel_nonexistent_operation() {
+    let e = Env::default();
+    let (client, _) = setup_contract(&e);
+    
+    client.cancel_operation(&999u32);
+}
+
+#[test]
+fn test_cancel_pending_operation() {
+    let e = Env::default();
+    let (client, _) = setup_contract(&e);
+    
+    ledger_default(&e, 100, 1000);
+    let timelock_bytes = soroban_sdk::Bytes::from_array(&e, &[1u8; 32]);
+    let op_id = client.propose_operation(&0u32, &timelock_bytes);
+    
+    client.cancel_operation(&op_id);
+}
+
+#[test]
+fn test_timelock_duration_config() {
+    let e = Env::default();
+    let (client, _) = setup_contract(&e);
+    
+    assert_eq!(client.get_timelock_duration(), 10u32);
+    
+    client.set_timelock_duration(&20u32);
+    assert_eq!(client.get_timelock_duration(), 20u32);
+}
+
+#[test]
+fn test_set_timelock_duration_unauthorized() {
+    let e = Env::default();
+    let (client, _) = setup_contract(&e);
+    
+    clear_auth(&e);
+    assert!(client.try_set_timelock_duration(&20u32).is_err());
+}
+
+#[test]
+fn test_multiple_pending_operations() {
+    let e = Env::default();
+    let (client, _) = setup_contract(&e);
+    
+    ledger_default(&e, 100, 1000);
+    
+    let timelock_bytes1 = soroban_sdk::Bytes::from_array(&e, &[1u8; 32]);
+    let op_id1 = client.propose_operation(&0u32, &timelock_bytes1);
+    
+    let timelock_bytes2 = soroban_sdk::Bytes::from_array(&e, &[2u8; 32]);
+    let op_id2 = client.propose_operation(&1u32, &timelock_bytes2);
+    
+    assert_eq!(op_id1, 1u32);
+    assert_eq!(op_id2, 2u32);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #14)")]
+fn test_execute_operation_twice() {
+    let e = Env::default();
+    let (client, _) = setup_contract(&e);
+    
+    ledger_default(&e, 100, 1000);
+    let timelock_bytes = soroban_sdk::Bytes::from_array(&e, &[1u8; 32]);
+    let op_id = client.propose_operation(&0u32, &timelock_bytes);
+    
+    ledger_default(&e, 111, 1000);
+    client.execute_operation(&op_id);
+    
+    client.execute_operation(&op_id);
+}
