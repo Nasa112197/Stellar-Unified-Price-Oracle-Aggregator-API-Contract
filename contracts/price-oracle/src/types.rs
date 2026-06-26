@@ -1,4 +1,4 @@
-use soroban_sdk::{contracttype, Address, Map, String, Symbol, Vec};
+use soroban_sdk::{contracttype, Address, Bytes, Map, String, Symbol, Vec};
 
 pub use crate::errors::ErrorCode;
 
@@ -84,4 +84,27 @@ pub struct PriceData {
     pub price: i128,
     pub timestamp: u64,
     pub last_updated: u32,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
+pub enum OperationType {
+    Upgrade = 0,
+    SetAdmin = 1,
+    SetMinSources = 2,
+    SetMaxHistory = 3,
+    SetResolution = 4,
+    SetDecimals = 5,
+    SetDescription = 6,
+    SetTimestampThreshold = 7,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
+pub struct PendingOperation {
+    pub id: u32,
+    pub op_type: OperationType,
+    pub proposed_by: Address,
+    pub proposed_ledger: u32,
+    pub data: Bytes,
 }

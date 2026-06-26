@@ -5,8 +5,10 @@ use crate::admin::{
     get_timestamp_threshold, get_aggregation_method,
 };
 use crate::events::{
-    HistoryPrunedEvent, PriceAggregatedEvent, PriceSubmittedEvent, SourcesInsufficientEvent,
+    HistoryPrunedEvent, PriceAggregatedEvent, PriceStaleEvent, PriceSubmittedEvent,
+    SourcesInsufficientEvent,
 };
+use crate::pause::check_not_paused;
 use crate::storage::{
     check_registered_asset, check_source, compute_median, compute_mean, compute_trimmed_median, compute_trimmed_mean, read_oracle_sources, LEDGER_BUMP,
     LEDGER_THRESHOLD,
@@ -17,6 +19,7 @@ use crate::types::{
 };
 
 pub fn submit_price(env: &Env, source: Address, asset: Address, price: i128, timestamp: u64) {
+    check_not_paused(env);
     source.require_auth();
     check_source(env, &source);
     check_registered_asset(env, &asset);
@@ -179,9 +182,17 @@ pub fn get_price(env: &Env, asset: Address, max_age: u64) -> Option<AggregatePri
     check_registered_asset(env, &asset);
     let key = DataKey::Aggregate(asset.clone());
     let result: AggregatePrice = env.storage().persistent().get(&key)?;
+    let current_ledger = env.ledger().sequence();
+    
     if max_age > 0 {
         let ledger_time = env.ledger().timestamp();
         if result.timestamp + max_age < ledger_time {
+            PriceStaleEvent {
+                asset: asset.clone(),
+                last_update_ledger: 0,
+                current_ledger,
+            }
+            .publish(env);
             return None;
         }
     }
@@ -189,6 +200,12 @@ pub fn get_price(env: &Env, asset: Address, max_age: u64) -> Option<AggregatePri
     if resolution > 0 {
         let ledger_time = env.ledger().timestamp();
         if result.timestamp + (resolution as u64) < ledger_time {
+            PriceStaleEvent {
+                asset: asset.clone(),
+                last_update_ledger: 0,
+                current_ledger,
+            }
+            .publish(env);
             return None;
         }
     }
