@@ -85,3 +85,23 @@ pub fn get_asset_metadata(env: &Env, asset: Address) -> Option<AssetMetadata> {
     }
     env.storage().persistent().get(&key)
 }
+
+pub fn set_min_price(env: &Env, asset: Address, min_price: i128) {
+    let admin = get_admin(env);
+    admin.require_auth();
+    crate::storage::check_registered_asset(env, &asset);
+    env.storage()
+        .persistent()
+        .set(&DataKey::AssetMinPrice(asset.clone()), &min_price);
+}
+
+pub fn get_min_price(env: &Env, asset: Address) -> i128 {
+    crate::storage::check_registered_asset(env, &asset);
+    let key = DataKey::AssetMinPrice(asset.clone());
+    if env.storage().persistent().has(&key) {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
+    }
+    env.storage().persistent().get(&key).unwrap_or(0)
+}

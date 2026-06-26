@@ -224,6 +224,16 @@ impl PriceOracleContract {
     pub fn get_asset_metadata(env: Env, asset: Address) -> Option<AssetMetadata> {
         assets::get_asset_metadata(&env, asset)
     }
+
+    // --- Minimum Price Threshold ---
+
+    pub fn set_min_price(env: Env, asset: Address, min_price: i128) {
+        assets::set_min_price(&env, asset, min_price);
+    }
+
+    pub fn get_min_price(env: Env, asset: Address) -> i128 {
+        assets::get_min_price(&env, asset)
+    }
 }
 
 #[cfg(test)]

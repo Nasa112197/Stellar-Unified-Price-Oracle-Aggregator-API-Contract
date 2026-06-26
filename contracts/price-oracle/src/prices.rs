@@ -25,6 +25,11 @@ pub fn submit_price(env: &Env, source: Address, asset: Address, price: i128, tim
         panic_with_error!(env, ErrorCode::InvalidPrice);
     }
 
+    let min_price = crate::assets::get_min_price(env, asset.clone());
+    if price < min_price {
+        panic_with_error!(env, ErrorCode::PriceBelowMinimum);
+    }
+
     let ledger_time = env.ledger().timestamp();
     let threshold = get_timestamp_threshold(env);
     if timestamp > ledger_time + threshold {

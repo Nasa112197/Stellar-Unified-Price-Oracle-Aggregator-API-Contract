@@ -15,4 +15,5 @@ pub enum ErrorCode {
     InvalidTimestamp = 9,
     InvalidConfiguration = 10,
     DescriptionTooLong = 11,
+    PriceBelowMinimum = 12,
 }
