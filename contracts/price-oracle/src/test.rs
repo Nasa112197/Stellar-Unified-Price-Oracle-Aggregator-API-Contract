@@ -1103,3 +1103,130 @@ fn test_removed_source_is_no_longer_source() {
     client.remove_source(&source);
     assert!(!client.is_source(&source));
 }
+
+
+// ---- Feature #46: Asset Price Expiry ----
+
+#[test]
+fn test_set_asset_expiry() {
+    let e = Env::default();
+    let (client, _) = setup_contract(&e);
+    let asset = register_test_asset(&e, &client);
+
+    // Set expiry to 100 ledgers (default resolution is 0)
+    client.set_asset_expiry(&asset, &100u32);
+    assert_eq!(client.get_asset_expiry(&asset), 100u32);
+}
+
+#[test]
+fn test_asset_expiry_default_uses_resolution() {
+    let e = Env::default();
+    let (client, _) = setup_contract(&e);
+    let asset = register_test_asset(&e, &client);
+
+    // Without explicit expiry, should return 0
+    assert_eq!(client.get_asset_expiry(&asset), 0u32);
+}
+
+#[test]
+fn test_get_price_checks_expiry() {
+    let e = Env::default();
+    ledger_default(&e, 100, 1000);
+    let (client, _) = setup_contract(&e);
+    let source = register_test_source(&e, &client, "Oracle");
+    client.set_min_sources_required(&1u32);
+    let asset = register_test_asset(&e, &client);
+
+    // Set asset expiry to 50 ledgers
+    client.set_asset_expiry(&asset, &50u32);
+
+    // Submit price at ledger 100
+    submit_test_price(&client, &source, &asset, 100i128, 1000);
+    let price = client.get_price(&asset, &0u64).unwrap();
+    assert_eq!(price.price, 100i128);
+
+    // Advance to ledger 140 (30 ledgers later, within expiry)
+    ledger_default(&e, 140, 1030);
+    let price = client.get_price(&asset, &0u64).unwrap();
+    assert_eq!(price.price, 100i128);
+
+    // Advance to ledger 160 (60 ledgers later, past expiry of 50)
+    ledger_default(&e, 160, 1050);
+    assert!(client.get_price(&asset, &0u64).is_none());
+}
+
+#[test]
+fn test_stale_price_returns_nodata() {
+    let e = Env::default();
+    ledger_default(&e, 100, 1000);
+    let (client, _) = setup_contract(&e);
+    let source = register_test_source(&e, &client, "Oracle");
+    client.set_min_sources_required(&1u32);
+    let asset = register_test_asset(&e, &client);
+
+    client.set_asset_expiry(&asset, &10u32);
+    submit_test_price(&client, &source, &asset, 100i128, 1000);
+
+    // Advance past expiry window
+    ledger_default(&e, 120, 1100);
+    let result = client.try_get_price(&asset, &0u64);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_historical_queries_work_on_stale_prices() {
+    let e = Env::default();
+    ledger_default(&e, 100, 1000);
+    let (client, _) = setup_contract(&e);
+    let source = register_test_source(&e, &client, "Oracle");
+    client.set_min_sources_required(&1u32);
+    let asset = register_test_asset(&e, &client);
+
+    client.set_asset_expiry(&asset, &10u32);
+    submit_test_price(&client, &source, &asset, 100i128, 1000);
+
+    // Advance past expiry
+    ledger_default(&e, 120, 1100);
+
+    // Historical query still works
+    assert!(client.has_historical_price(&asset, &100u32));
+    let hist = client.get_historical_price(&asset, &100u32);
+    assert_eq!(hist.price, 100i128);
+}
+
+#[test]
+fn test_expiry_event_emitted_on_set() {
+    let e = Env::default();
+    let (client, _) = setup_contract(&e);
+    let asset = register_test_asset(&e, &client);
+
+    client.set_asset_expiry(&asset, &100u32);
+
+    let events = e.events().all();
+    let found = events.iter().any(|event| {
+        let topics = &event.topics;
+        topics.len() > 0
+    });
+    assert!(found);
+}
+
+#[test]
+fn test_asset_expiry_at_boundary_ledger() {
+    let e = Env::default();
+    ledger_default(&e, 100, 1000);
+    let (client, _) = setup_contract(&e);
+    let source = register_test_source(&e, &client, "Oracle");
+    client.set_min_sources_required(&1u32);
+    let asset = register_test_asset(&e, &client);
+
+    client.set_asset_expiry(&asset, &50u32);
+    submit_test_price(&client, &source, &asset, 100i128, 1000);
+
+    // Exactly at expiry boundary (100 + 50 = 150)
+    ledger_default(&e, 150, 1050);
+    assert!(client.get_price(&asset, &0u64).is_some());
+
+    // Just past boundary
+    ledger_default(&e, 151, 1051);
+    assert!(client.get_price(&asset, &0u64).is_none());
+}
