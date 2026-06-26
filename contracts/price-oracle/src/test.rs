@@ -1103,3 +1103,340 @@ fn test_removed_source_is_no_longer_source() {
     client.remove_source(&source);
     assert!(!client.is_source(&source));
 }
+
+
+// ---- Feature 1: Asset Metadata Tests ----
+
+#[test]
+fn test_set_and_get_asset_metadata() {
+    let e = Env::default();
+    let (client, _) = setup_contract(&e);
+    let asset = register_test_asset(&e, &client);
+
+    let metadata = crate::AssetMetadata {
+        name: String::from_str(&e, "Bitcoin"),
+        symbol: String::from_str(&e, "BTC"),
+        decimals: Some(8u32),
+    };
+
+    client.set_asset_metadata(&asset, &metadata);
+
+    let retrieved = client.get_asset_metadata(&asset).unwrap();
+    assert_eq!(retrieved.name, String::from_str(&e, "Bitcoin"));
+    assert_eq!(retrieved.symbol, String::from_str(&e, "BTC"));
+    assert_eq!(retrieved.decimals, Some(8u32));
+}
+
+#[test]
+fn test_asset_metadata_update() {
+    let e = Env::default();
+    let (client, _) = setup_contract(&e);
+    let asset = register_test_asset(&e, &client);
+
+    let metadata1 = crate::AssetMetadata {
+        name: String::from_str(&e, "Bitcoin"),
+        symbol: String::from_str(&e, "BTC"),
+        decimals: Some(8u32),
+    };
+    client.set_asset_metadata(&asset, &metadata1);
+
+    let metadata2 = crate::AssetMetadata {
+        name: String::from_str(&e, "Bitcoin Cash"),
+        symbol: String::from_str(&e, "BCH"),
+        decimals: Some(8u32),
+    };
+    client.set_asset_metadata(&asset, &metadata2);
+
+    let retrieved = client.get_asset_metadata(&asset).unwrap();
+    assert_eq!(retrieved.name, String::from_str(&e, "Bitcoin Cash"));
+    assert_eq!(retrieved.symbol, String::from_str(&e, "BCH"));
+}
+
+#[test]
+fn test_asset_metadata_none_decimals() {
+    let e = Env::default();
+    let (client, _) = setup_contract(&e);
+    let asset = register_test_asset(&e, &client);
+
+    let metadata = crate::AssetMetadata {
+        name: String::from_str(&e, "Ethereum"),
+        symbol: String::from_str(&e, "ETH"),
+        decimals: None,
+    };
+
+    client.set_asset_metadata(&asset, &metadata);
+
+    let retrieved = client.get_asset_metadata(&asset).unwrap();
+    assert_eq!(retrieved.decimals, None);
+}
+
+#[test]
+fn test_set_asset_metadata_requires_admin() {
+    let e = Env::default();
+    let (client, _) = setup_contract(&e);
+    let asset = register_test_asset(&e, &client);
+
+    clear_auth(&e);
+
+    let metadata = crate::AssetMetadata {
+        name: String::from_str(&e, "Bitcoin"),
+        symbol: String::from_str(&e, "BTC"),
+        decimals: Some(8u32),
+    };
+
+    assert!(client.try_set_asset_metadata(&asset, &metadata).is_err());
+}
+
+#[test]
+fn test_get_asset_metadata_nonexistent() {
+    let e = Env::default();
+    let (client, _) = setup_contract(&e);
+    let asset = register_test_asset(&e, &client);
+
+    let result = client.get_asset_metadata(&asset);
+    assert!(result.is_none());
+}
+
+// ---- Feature 2: Minimum Viable Price Threshold Tests ----
+
+#[test]
+fn test_set_and_get_min_price() {
+    let e = Env::default();
+    ledger_default(&e, 100, 1000);
+    let (client, _) = setup_contract(&e);
+    let asset = register_test_asset(&e, &client);
+
+    client.set_min_price(&asset, &100i128);
+    let min_price = client.get_min_price(&asset);
+    assert_eq!(min_price, 100i128);
+}
+
+#[test]
+fn test_reject_price_below_minimum() {
+    let e = Env::default();
+    ledger_default(&e, 100, 1000);
+    let (client, _) = setup_contract(&e);
+    let source = register_test_source(&e, &client, "Oracle");
+    let asset = register_test_asset(&e, &client);
+
+    client.set_min_price(&asset, &100i128);
+
+    // Try to submit price below minimum
+    assert!(client
+        .try_submit_price(&source, &asset, &50i128, &1000u64)
+        .is_err());
+}
+
+#[test]
+fn test_accept_price_at_minimum() {
+    let e = Env::default();
+    ledger_default(&e, 100, 1000);
+    let (client, _) = setup_contract(&e);
+    client.set_min_sources_required(&1u32);
+    let source = register_test_source(&e, &client, "Oracle");
+    let asset = register_test_asset(&e, &client);
+
+    client.set_min_price(&asset, &100i128);
+    submit_test_price(&client, &source, &asset, 100i128, 1000);
+
+    let price = client.get_price(&asset, &0u64).unwrap();
+    assert_eq!(price.price, 100i128);
+}
+
+#[test]
+fn test_accept_price_above_minimum() {
+    let e = Env::default();
+    ledger_default(&e, 100, 1000);
+    let (client, _) = setup_contract(&e);
+    client.set_min_sources_required(&1u32);
+    let source = register_test_source(&e, &client, "Oracle");
+    let asset = register_test_asset(&e, &client);
+
+    client.set_min_price(&asset, &100i128);
+    submit_test_price(&client, &source, &asset, 200i128, 1000);
+
+    let price = client.get_price(&asset, &0u64).unwrap();
+    assert_eq!(price.price, 200i128);
+}
+
+#[test]
+fn test_default_min_price_is_zero() {
+    let e = Env::default();
+    ledger_default(&e, 100, 1000);
+    let (client, _) = setup_contract(&e);
+    let asset = register_test_asset(&e, &client);
+
+    let min_price = client.get_min_price(&asset);
+    assert_eq!(min_price, 0i128);
+}
+
+#[test]
+fn test_min_price_per_asset() {
+    let e = Env::default();
+    ledger_default(&e, 100, 1000);
+    let (client, _) = setup_contract(&e);
+    let asset1 = register_test_asset(&e, &client);
+    let asset2 = register_test_asset(&e, &client);
+
+    client.set_min_price(&asset1, &100i128);
+    client.set_min_price(&asset2, &200i128);
+
+    assert_eq!(client.get_min_price(&asset1), 100i128);
+    assert_eq!(client.get_min_price(&asset2), 200i128);
+}
+
+#[test]
+fn test_set_min_price_requires_admin() {
+    let e = Env::default();
+    let (client, _) = setup_contract(&e);
+    let asset = register_test_asset(&e, &client);
+
+    clear_auth(&e);
+    assert!(client.try_set_min_price(&asset, &100i128).is_err());
+}
+
+// ---- Feature 3: Batch Price Query Tests ----
+
+#[test]
+fn test_get_prices_batch() {
+    let e = Env::default();
+    ledger_default(&e, 100, 1000);
+    let (client, _) = setup_contract(&e);
+    client.set_min_sources_required(&1u32);
+    let source = register_test_source(&e, &client, "Oracle");
+    let asset1 = register_test_asset(&e, &client);
+    let asset2 = register_test_asset(&e, &client);
+
+    submit_test_price(&client, &source, &asset1, 100i128, 1000);
+    submit_test_price(&client, &source, &asset2, 200i128, 1000);
+
+    let mut assets: Vec<Address> = Vec::new(&e);
+    assets.push_back(asset1);
+    assets.push_back(asset2);
+
+    let prices = client.get_prices(&assets);
+    assert_eq!(prices.len(), 2);
+    assert_eq!(prices.get_unchecked(0).unwrap().price, 100i128);
+    assert_eq!(prices.get_unchecked(1).unwrap().price, 200i128);
+}
+
+#[test]
+fn test_get_prices_empty_list() {
+    let e = Env::default();
+    let (client, _) = setup_contract(&e);
+    let assets: Vec<Address> = Vec::new(&e);
+
+    let prices = client.get_prices(&assets);
+    assert_eq!(prices.len(), 0);
+}
+
+#[test]
+fn test_get_prices_mixed_availability() {
+    let e = Env::default();
+    ledger_default(&e, 100, 1000);
+    let (client, _) = setup_contract(&e);
+    client.set_min_sources_required(&1u32);
+    let source = register_test_source(&e, &client, "Oracle");
+    let asset1 = register_test_asset(&e, &client);
+    let asset2 = register_test_asset(&e, &client);
+
+    submit_test_price(&client, &source, &asset1, 100i128, 1000);
+
+    let mut assets: Vec<Address> = Vec::new(&e);
+    assets.push_back(asset1);
+    assets.push_back(asset2);
+
+    let prices = client.get_prices(&assets);
+    assert_eq!(prices.len(), 2);
+    assert!(prices.get_unchecked(0).is_some());
+    assert!(prices.get_unchecked(1).is_none());
+}
+
+#[test]
+fn test_get_prices_maintains_order() {
+    let e = Env::default();
+    ledger_default(&e, 100, 1000);
+    let (client, _) = setup_contract(&e);
+    client.set_min_sources_required(&1u32);
+    let source = register_test_source(&e, &client, "Oracle");
+    let asset1 = register_test_asset(&e, &client);
+    let asset2 = register_test_asset(&e, &client);
+    let asset3 = register_test_asset(&e, &client);
+
+    submit_test_price(&client, &source, &asset1, 100i128, 1000);
+    submit_test_price(&client, &source, &asset2, 200i128, 1000);
+    submit_test_price(&client, &source, &asset3, 300i128, 1000);
+
+    let mut assets: Vec<Address> = Vec::new(&e);
+    assets.push_back(asset3.clone());
+    assets.push_back(asset1.clone());
+    assets.push_back(asset2.clone());
+
+    let prices = client.get_prices(&assets);
+    assert_eq!(prices.get_unchecked(0).unwrap().price, 300i128);
+    assert_eq!(prices.get_unchecked(1).unwrap().price, 100i128);
+    assert_eq!(prices.get_unchecked(2).unwrap().price, 200i128);
+}
+
+#[test]
+fn test_get_prices_all_unavailable() {
+    let e = Env::default();
+    let (client, _) = setup_contract(&e);
+    let asset1 = register_test_asset(&e, &client);
+    let asset2 = register_test_asset(&e, &client);
+
+    let mut assets: Vec<Address> = Vec::new(&e);
+    assets.push_back(asset1);
+    assets.push_back(asset2);
+
+    let prices = client.get_prices(&assets);
+    assert_eq!(prices.len(), 2);
+    assert!(prices.get_unchecked(0).is_none());
+    assert!(prices.get_unchecked(1).is_none());
+}
+
+// ---- Feature 4: Price Change Percentage Tests ----
+
+#[test]
+fn test_get_price_change_history_created() {
+    let e = Env::default();
+    ledger_default(&e, 100, 1000);
+    let (client, _) = setup_contract(&e);
+    client.set_min_sources_required(&1u32);
+    let source = register_test_source(&e, &client, "Oracle");
+    let asset = register_test_asset(&e, &client);
+
+    // Ledger 100: initial price 100
+    submit_test_price(&client, &source, &asset, 100i128, 1000);
+    
+    // Verify history was created
+    assert!(client.has_historical_price(&asset, &100u32));
+    let hist = client.get_historical_price(&asset, &100u32);
+    assert_eq!(hist.price, 100i128);
+}
+
+#[test]
+fn test_get_price_change_no_current_price() {
+    let e = Env::default();
+    ledger_default(&e, 100, 1000);
+    let (client, _) = setup_contract(&e);
+    let asset = register_test_asset(&e, &client);
+
+    let change = client.get_price_change(&asset, &50u32);
+    assert!(change.is_none());
+}
+
+#[test]
+fn test_get_price_change_zero_old_price_returns_none() {
+    let e = Env::default();
+    ledger_default(&e, 100, 1000);
+    let (client, _) = setup_contract(&e);
+    client.set_min_sources_required(&1u32);
+    let source = register_test_source(&e, &client, "Oracle");
+    let asset = register_test_asset(&e, &client);
+
+    submit_test_price(&client, &source, &asset, 100i128, 1000);
+
+    let change = client.get_price_change(&asset, &200u32);
+    assert!(change.is_none());
+}
