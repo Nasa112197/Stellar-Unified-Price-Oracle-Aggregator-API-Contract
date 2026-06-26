@@ -1362,3 +1362,140 @@ fn test_vwap_weighted_heavily_on_one_source() {
     let vwap = client.get_vwap(&asset, &volumes).unwrap();
     assert_eq!(vwap, 105i128);
 }
+
+
+// ---- Feature #43: Circuit Breaker ----
+
+#[test]
+fn test_circuit_breaker_threshold_config() {
+    let e = Env::default();
+    let (client, _) = setup_contract(&e);
+
+    client.set_circuit_breaker_threshold(&10u32);
+    assert_eq!(client.get_circuit_breaker_threshold(), 10u32);
+}
+
+#[test]
+fn test_circuit_breaker_trips_on_deviation() {
+    let e = Env::default();
+    ledger_default(&e, 100, 1000);
+    let (client, _) = setup_contract(&e);
+    let source1 = register_test_source(&e, &client, "Oracle1");
+    let source2 = register_test_source(&e, &client, "Oracle2");
+    client.set_min_sources_required(&2u32);
+    let asset = register_test_asset(&e, &client);
+    client.set_circuit_breaker_threshold(&10u32); // 10% threshold
+
+    // Initial aggregate: 150 (100 + 200) / 2
+    submit_test_price(&client, &source1, &asset, 100i128, 1000);
+    submit_test_price(&client, &source2, &asset, 200i128, 1000);
+    let price = client.get_price(&asset, &0u64).unwrap();
+    assert_eq!(price.price, 150i128);
+    assert!(!client.is_aggregation_paused());
+
+    // New prices: 190 (100 + 280) / 2 - deviation > 10%
+    submit_test_price(&client, &source1, &asset, 100i128, 1001);
+    submit_test_price(&client, &source2, &asset, 280i128, 1001);
+
+    // Circuit breaker should trip
+    assert!(client.is_aggregation_paused());
+}
+
+#[test]
+fn test_circuit_breaker_blocks_aggregation_while_tripped() {
+    let e = Env::default();
+    ledger_default(&e, 100, 1000);
+    let (client, _) = setup_contract(&e);
+    let source1 = register_test_source(&e, &client, "Oracle1");
+    let source2 = register_test_source(&e, &client, "Oracle2");
+    client.set_min_sources_required(&2u32);
+    let asset = register_test_asset(&e, &client);
+    client.set_circuit_breaker_threshold(&10u32);
+
+    submit_test_price(&client, &source1, &asset, 100i128, 1000);
+    submit_test_price(&client, &source2, &asset, 200i128, 1000);
+    let first_price = client.get_price(&asset, &0u64).unwrap();
+    assert_eq!(first_price.price, 150i128);
+
+    // Trigger circuit breaker
+    submit_test_price(&client, &source1, &asset, 100i128, 1001);
+    submit_test_price(&client, &source2, &asset, 280i128, 1001);
+
+    // While paused, get_price returns last good price
+    let paused_price = client.get_price(&asset, &0u64).unwrap();
+    assert_eq!(paused_price.price, 150i128);
+
+    // New submissions still accepted
+    submit_test_price(&client, &source1, &asset, 110i128, 1002);
+    submit_test_price(&client, &source2, &asset, 190i128, 1002);
+}
+
+#[test]
+fn test_circuit_breaker_reset() {
+    let e = Env::default();
+    ledger_default(&e, 100, 1000);
+    let (client, _) = setup_contract(&e);
+    let source1 = register_test_source(&e, &client, "Oracle1");
+    let source2 = register_test_source(&e, &client, "Oracle2");
+    client.set_min_sources_required(&2u32);
+    let asset = register_test_asset(&e, &client);
+    client.set_circuit_breaker_threshold(&10u32);
+
+    submit_test_price(&client, &source1, &asset, 100i128, 1000);
+    submit_test_price(&client, &source2, &asset, 200i128, 1000);
+
+    // Trip it
+    submit_test_price(&client, &source1, &asset, 100i128, 1001);
+    submit_test_price(&client, &source2, &asset, 280i128, 1001);
+    assert!(client.is_aggregation_paused());
+
+    // Reset
+    client.reset_circuit_breaker();
+    assert!(!client.is_aggregation_paused());
+}
+
+#[test]
+fn test_circuit_breaker_within_threshold_does_not_trip() {
+    let e = Env::default();
+    ledger_default(&e, 100, 1000);
+    let (client, _) = setup_contract(&e);
+    let source1 = register_test_source(&e, &client, "Oracle1");
+    let source2 = register_test_source(&e, &client, "Oracle2");
+    client.set_min_sources_required(&2u32);
+    let asset = register_test_asset(&e, &client);
+    client.set_circuit_breaker_threshold(&10u32);
+
+    submit_test_price(&client, &source1, &asset, 100i128, 1000);
+    submit_test_price(&client, &source2, &asset, 200i128, 1000);
+    let first = client.get_price(&asset, &0u64).unwrap();
+    assert_eq!(first.price, 150i128);
+
+    // New median: 155 - less than 10% change
+    submit_test_price(&client, &source1, &asset, 110i128, 1001);
+    submit_test_price(&client, &source2, &asset, 200i128, 1001);
+
+    assert!(!client.is_aggregation_paused());
+    let second = client.get_price(&asset, &0u64).unwrap();
+    assert_eq!(second.price, 155i128);
+}
+
+#[test]
+fn test_circuit_breaker_event_emitted_on_trip() {
+    let e = Env::default();
+    ledger_default(&e, 100, 1000);
+    let (client, _) = setup_contract(&e);
+    let source1 = register_test_source(&e, &client, "Oracle1");
+    let source2 = register_test_source(&e, &client, "Oracle2");
+    client.set_min_sources_required(&2u32);
+    let asset = register_test_asset(&e, &client);
+    client.set_circuit_breaker_threshold(&10u32);
+
+    submit_test_price(&client, &source1, &asset, 100i128, 1000);
+    submit_test_price(&client, &source2, &asset, 200i128, 1000);
+
+    submit_test_price(&client, &source1, &asset, 100i128, 1001);
+    submit_test_price(&client, &source2, &asset, 280i128, 1001);
+
+    let events = e.events().all();
+    assert!(events.len() > 0);
+}
