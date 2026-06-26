@@ -344,3 +344,41 @@ pub fn prices(env: &Env, asset: Asset, records: u32) -> Option<Vec<PriceData>> {
     }
     Some(result)
 }
+
+pub fn get_prices(env: &Env, assets: Vec<Address>) -> Vec<Option<AggregatePrice>> {
+    let mut results: Vec<Option<AggregatePrice>> = Vec::new(env);
+    for i in 0..assets.len() {
+        let asset = assets.get_unchecked(i);
+        let price = get_price(env, asset, 0);
+        results.push_back(price);
+    }
+    results
+}
+
+pub fn get_price_change(env: &Env, asset: Address, ledgers_back: u32) -> Option<i128> {
+    check_registered_asset(env, &asset);
+    
+    let current_price = get_price(env, asset.clone(), 0)?;
+    
+    if current_price.price == 0 {
+        return None;
+    }
+
+    let current_ledger = env.ledger().sequence();
+    let target_ledger = current_ledger.saturating_sub(ledgers_back);
+    
+    let hist_key = DataKey::PriceHistory(asset.clone(), target_ledger);
+    let historical_entry: Option<PriceHistoryEntry> = env.storage().temporary().get(&hist_key);
+    
+    let old_price = match historical_entry {
+        Some(entry) => entry.price,
+        None => return None,
+    };
+    
+    if old_price == 0 {
+        return None;
+    }
+    
+    let change_percent = ((current_price.price - old_price) * 100) / old_price;
+    Some(change_percent)
+}

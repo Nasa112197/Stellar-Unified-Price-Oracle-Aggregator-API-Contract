@@ -234,6 +234,18 @@ impl PriceOracleContract {
     pub fn get_min_price(env: Env, asset: Address) -> i128 {
         assets::get_min_price(&env, asset)
     }
+
+    // --- Batch Price Query ---
+
+    pub fn get_prices(env: Env, assets: Vec<Address>) -> Vec<Option<AggregatePrice>> {
+        prices::get_prices(&env, assets)
+    }
+
+    // --- Price Change Monitoring ---
+
+    pub fn get_price_change(env: Env, asset: Address, ledgers_back: u32) -> Option<i128> {
+        prices::get_price_change(&env, asset, ledgers_back)
+    }
 }
 
 #[cfg(test)]
