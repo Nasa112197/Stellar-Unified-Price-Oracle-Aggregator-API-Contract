@@ -161,3 +161,34 @@ pub fn emit_timestamp_threshold_changed(env: &soroban_sdk::Env, admin: Address, 
     let sym = soroban_sdk::symbol_short!("tthr");
     env.events().publish((sym, admin), (value,));
 }
+
+#[contractevent]
+#[derive(Clone)]
+pub struct SourceSuspendedEvent {
+    #[topic]
+    pub source: Address,
+    #[topic]
+    pub admin: Address,
+    pub reason: u32,
+}
+
+#[contractevent]
+#[derive(Clone)]
+pub struct SourceUnsuspendedEvent {
+    #[topic]
+    pub source: Address,
+    #[topic]
+    pub admin: Address,
+}
+
+#[contractevent]
+#[derive(Clone)]
+pub struct MaxInvalidSubmissionsChangedEvent {
+    pub value: u32,
+}
+
+#[contractevent]
+#[derive(Clone)]
+pub struct AggregationMethodChangedEvent {
+    pub method: u32,
+}

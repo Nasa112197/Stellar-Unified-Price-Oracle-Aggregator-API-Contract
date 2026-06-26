@@ -1103,3 +1103,337 @@ fn test_removed_source_is_no_longer_source() {
     client.remove_source(&source);
     assert!(!client.is_source(&source));
 }
+
+
+// ============================================================================
+// Issue #47: Source Suspension Tests
+// ============================================================================
+
+#[test]
+fn test_source_suspension_after_invalid_submissions() {
+    let e = Env::default();
+    let (client, _) = setup_contract(&e);
+    let asset = register_test_asset(&e, &client);
+    let source = register_test_source(&e, &client, "BadSource");
+
+    client.set_max_invalid_submissions(&3u32);
+
+    // First invalid submission - price = 0
+    assert!(client.try_submit_price(&source, &asset, &0i128, &1000u64).is_err());
+
+    // Second invalid submission - negative price
+    assert!(client.try_submit_price(&source, &asset, &-50i128, &1000u64).is_err());
+
+    // Third invalid submission - exceeds max invalid
+    assert!(client.try_submit_price(&source, &asset, &-100i128, &1000u64).is_err());
+
+    // Source should now be suspended
+    assert!(client.is_source_suspended(&source));
+
+    // Valid submission from suspended source should fail
+    assert!(client.try_submit_price(&source, &asset, &100i128, &1000u64).is_err());
+}
+
+#[test]
+fn test_set_max_invalid_submissions() {
+    let e = Env::default();
+    let (client, _) = setup_contract(&e);
+
+    client.set_max_invalid_submissions(&10u32);
+    assert_eq!(client.get_max_invalid_submissions(), 10u32);
+
+    client.set_max_invalid_submissions(&5u32);
+    assert_eq!(client.get_max_invalid_submissions(), 5u32);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #10)")]
+fn test_set_max_invalid_submissions_zero_fails() {
+    let e = Env::default();
+    let (client, _) = setup_contract(&e);
+
+    client.set_max_invalid_submissions(&0u32);
+}
+
+#[test]
+fn test_unsuspend_source() {
+    let e = Env::default();
+    let (client, _) = setup_contract(&e);
+    let asset = register_test_asset(&e, &client);
+    let source = register_test_source(&e, &client, "Source");
+
+    client.set_max_invalid_submissions(&2u32);
+
+    // Make source submit invalid prices to suspend it
+    let _ = client.try_submit_price(&source, &asset, &0i128, &1000u64);
+    let _ = client.try_submit_price(&source, &asset, &-50i128, &1000u64);
+
+    assert!(client.is_source_suspended(&source));
+
+    // Unsuspend
+    client.unsuspend_source(&source);
+    assert!(!client.is_source_suspended(&source));
+
+    // Should now be able to submit valid prices
+    submit_test_price(&client, &source, &asset, 100i128, 1000);
+    let entry = client.get_source_price(&asset, &source);
+    assert_eq!(entry.price, 100i128);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #0)")]
+fn test_unsuspend_source_unauthorized() {
+    let e = Env::default();
+    let (client, _) = setup_contract(&e);
+    let source = register_test_source(&e, &client, "Source");
+
+    clear_auth(&e);
+    client.unsuspend_source(&source);
+}
+
+// ============================================================================
+// Issue #50: Last Update Timestamp Tests
+// ============================================================================
+
+#[test]
+fn test_price_entry_last_updated() {
+    let e = Env::default();
+    ledger_default(&e, 500, 1000);
+    let (client, _) = setup_contract(&e);
+    client.set_min_sources_required(&1u32);
+    let source = register_test_source(&e, &client, "Source");
+    let asset = register_test_asset(&e, &client);
+
+    submit_test_price(&client, &source, &asset, 100i128, 1000);
+
+    let entry = client.get_source_price(&asset, &source);
+    assert_eq!(entry.last_updated, 500u32);
+    assert_eq!(entry.price, 100i128);
+}
+
+#[test]
+fn test_price_data_last_updated_in_sep40() {
+    let e = Env::default();
+    ledger_default(&e, 600, 1000);
+    let (client, _) = setup_contract(&e);
+    client.set_min_sources_required(&1u32);
+    let source = register_test_source(&e, &client, "Source");
+    let asset = Address::generate(&e);
+    client.register_asset(&asset);
+
+    submit_test_price(&client, &source, &asset, 100i128, 1000);
+
+    let price_data = client.lastprice(&Asset::Stellar(asset.clone())).unwrap();
+    assert_eq!(price_data.last_updated, 600u32);
+    assert_eq!(price_data.price, 100i128);
+}
+
+#[test]
+fn test_get_all_prices_includes_last_updated() {
+    let e = Env::default();
+    ledger_default(&e, 750, 1000);
+    let (client, _) = setup_contract(&e);
+    client.set_min_sources_required(&1u32);
+    let source1 = register_test_source(&e, &client, "Source1");
+    let source2 = register_test_source(&e, &client, "Source2");
+    let asset = register_test_asset(&e, &client);
+
+    submit_test_price(&client, &source1, &asset, 100i128, 1000);
+    submit_test_price(&client, &source2, &asset, 200i128, 1000);
+
+    let all_prices = client.get_all_prices(&asset);
+    assert_eq!(all_prices.len(), 2u32);
+
+    for i in 0..all_prices.len() {
+        let entry = all_prices.get_unchecked(i);
+        assert_eq!(entry.last_updated, 750u32);
+    }
+}
+
+#[test]
+fn test_prices_sep40_includes_last_updated() {
+    let e = Env::default();
+    ledger_default(&e, 800, 1000);
+    let (client, _) = setup_contract(&e);
+    client.set_min_sources_required(&1u32);
+    let source = register_test_source(&e, &client, "Source");
+    let asset = Address::generate(&e);
+    client.register_asset(&asset);
+
+    submit_test_price(&client, &source, &asset, 100i128, 1000);
+
+    let price_records = client.prices(&Asset::Stellar(asset), &3u32).unwrap();
+    assert!(price_records.len() > 0u32);
+    let record = price_records.get_unchecked(0);
+    assert_eq!(record.last_updated, 800u32);
+}
+
+// ============================================================================
+// Issue #49 & #48: Aggregation Method Tests
+// ============================================================================
+
+#[test]
+fn test_set_aggregation_method() {
+    let e = Env::default();
+    let (client, _) = setup_contract(&e);
+
+    // Default is Median
+    assert_eq!(client.get_aggregation_method(), 0u32);
+
+    // Set to Mean (1)
+    client.set_aggregation_method(&1u32);
+    assert_eq!(client.get_aggregation_method(), 1u32);
+
+    // Set to TrimmedMean (2)
+    client.set_aggregation_method(&2u32);
+    assert_eq!(client.get_aggregation_method(), 2u32);
+
+    // Back to Median
+    client.set_aggregation_method(&0u32);
+    assert_eq!(client.get_aggregation_method(), 0u32);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #10)")]
+fn test_invalid_aggregation_method() {
+    let e = Env::default();
+    let (client, _) = setup_contract(&e);
+
+    client.set_aggregation_method(&5u32);
+}
+
+#[test]
+fn test_aggregation_method_median() {
+    let e = Env::default();
+    ledger_default(&e, 100, 1000);
+    let (client, _) = setup_contract(&e);
+    client.set_aggregation_method(&0u32); // Median
+    client.set_min_sources_required(&3u32);
+
+    let source1 = register_test_source(&e, &client, "Source1");
+    let source2 = register_test_source(&e, &client, "Source2");
+    let source3 = register_test_source(&e, &client, "Source3");
+    let asset = register_test_asset(&e, &client);
+
+    // Prices: 100, 200, 300 -> median = 200
+    submit_test_price(&client, &source1, &asset, 100i128, 1000);
+    submit_test_price(&client, &source2, &asset, 200i128, 1000);
+    submit_test_price(&client, &source3, &asset, 300i128, 1000);
+
+    let price = client.get_price(&asset, &0u64).unwrap();
+    assert_eq!(price.price, 200i128);
+}
+
+#[test]
+fn test_aggregation_method_mean() {
+    let e = Env::default();
+    ledger_default(&e, 100, 1000);
+    let (client, _) = setup_contract(&e);
+    client.set_aggregation_method(&1u32); // Mean
+    client.set_min_sources_required(&3u32);
+
+    let source1 = register_test_source(&e, &client, "Source1");
+    let source2 = register_test_source(&e, &client, "Source2");
+    let source3 = register_test_source(&e, &client, "Source3");
+    let asset = register_test_asset(&e, &client);
+
+    // Prices: 100, 200, 300 -> mean = 200
+    submit_test_price(&client, &source1, &asset, 100i128, 1000);
+    submit_test_price(&client, &source2, &asset, 200i128, 1000);
+    submit_test_price(&client, &source3, &asset, 300i128, 1000);
+
+    let price = client.get_price(&asset, &0u64).unwrap();
+    assert_eq!(price.price, 200i128);
+}
+
+#[test]
+fn test_aggregation_method_trimmed_mean() {
+    let e = Env::default();
+    ledger_default(&e, 100, 1000);
+    let (client, _) = setup_contract(&e);
+    client.set_aggregation_method(&2u32); // TrimmedMean
+    client.set_min_sources_required(&5u32);
+
+    let sources: Vec<Address> = (0..5u32)
+        .map(|_| register_test_source(&e, &client, "Source"))
+        .collect();
+    let asset = register_test_asset(&e, &client);
+
+    // Prices: 100, 200, 300, 400, 500
+    // With 10% trim, remove 5% from each end
+    submit_test_price(&client, &sources.get_unchecked(0), &asset, 100i128, 1000);
+    submit_test_price(&client, &sources.get_unchecked(1), &asset, 200i128, 1000);
+    submit_test_price(&client, &sources.get_unchecked(2), &asset, 300i128, 1000);
+    submit_test_price(&client, &sources.get_unchecked(3), &asset, 400i128, 1000);
+    submit_test_price(&client, &sources.get_unchecked(4), &asset, 500i128, 1000);
+
+    let price = client.get_price(&asset, &0u64).unwrap();
+    // Trimmed set (10% = remove top/bottom) should be roughly centered on median
+    assert!(price.price > 100i128 && price.price < 500i128);
+}
+
+#[test]
+fn test_aggregation_method_switching() {
+    let e = Env::default();
+    ledger_default(&e, 100, 1000);
+    let (client, _) = setup_contract(&e);
+    client.set_min_sources_required(&3u32);
+
+    let source1 = register_test_source(&e, &client, "Source1");
+    let source2 = register_test_source(&e, &client, "Source2");
+    let source3 = register_test_source(&e, &client, "Source3");
+    let asset = register_test_asset(&e, &client);
+
+    // Prices: 100, 300, 500
+    submit_test_price(&client, &source1, &asset, 100i128, 1000);
+    submit_test_price(&client, &source2, &asset, 300i128, 1000);
+    submit_test_price(&client, &source3, &asset, 500i128, 1000);
+
+    // Median = 300
+    client.set_aggregation_method(&0u32);
+    let price = client.get_price(&asset, &0u64).unwrap();
+    assert_eq!(price.price, 300i128);
+
+    // Mean = (100+300+500)/3 = 233
+    client.set_aggregation_method(&1u32);
+    submit_test_price(&client, &source1, &asset, 100i128, 1001);
+    let price = client.get_price(&asset, &0u64).unwrap();
+    assert_eq!(price.price, 233i128);
+}
+
+#[test]
+fn test_trimmed_median_outlier_removal() {
+    let e = Env::default();
+    ledger_default(&e, 100, 1000);
+    let (client, _) = setup_contract(&e);
+    client.set_aggregation_method(&2u32); // TrimmedMean with 10% trim
+    client.set_min_sources_required(&5u32);
+
+    let sources: Vec<Address> = (0..5u32)
+        .map(|_| register_test_source(&e, &client, "Source"))
+        .collect();
+    let asset = register_test_asset(&e, &client);
+
+    // Prices with outliers: 10, 100, 200, 300, 5000
+    // Without trim: mean = 1122, but with trim, extreme values removed
+    submit_test_price(&client, &sources.get_unchecked(0), &asset, 10i128, 1000);
+    submit_test_price(&client, &sources.get_unchecked(1), &asset, 100i128, 1000);
+    submit_test_price(&client, &sources.get_unchecked(2), &asset, 200i128, 1000);
+    submit_test_price(&client, &sources.get_unchecked(3), &asset, 300i128, 1000);
+    submit_test_price(&client, &sources.get_unchecked(4), &asset, 5000i128, 1000);
+
+    let price = client.get_price(&asset, &0u64).unwrap();
+    // Trimmed version should reduce effect of outliers
+    assert!(price.price < 1122i128);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #0)")]
+fn test_unsuspend_source_unauthorized_check() {
+    let e = Env::default();
+    let (client, _) = setup_contract(&e);
+    let source = register_test_source(&e, &client, "Source");
+
+    clear_auth(&e);
+    client.unsuspend_source(&source);
+}

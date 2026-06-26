@@ -21,6 +21,9 @@ pub enum DataKey {
     Decimals,
     Description,
     TimestampThreshold,
+    SourceSuspended(Address),
+    SourceInvalidCount(Address),
+    MaxInvalidSubmissions,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -30,6 +33,7 @@ pub struct PriceEntry {
     pub timestamp: u64,
     pub source: Address,
     pub decimals: u32,
+    pub last_updated: u32,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -66,7 +70,16 @@ pub enum Asset {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[contracttype]
+pub enum AggregationMethod {
+    Median = 0,
+    Mean = 1,
+    TrimmedMean = 2,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
 pub struct PriceData {
     pub price: i128,
     pub timestamp: u64,
+    pub last_updated: u32,
 }

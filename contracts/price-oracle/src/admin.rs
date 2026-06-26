@@ -1,12 +1,12 @@
 use soroban_sdk::{panic_with_error, Address, Env, String};
 
 use crate::events::{
-    emit_initialized, emit_timestamp_threshold_changed, AdminChangedEvent, ContractUpgradedEvent,
-    DecimalsChangedEvent, DescriptionChangedEvent, MaxHistoryChangedEvent, MinSourcesChangedEvent,
+    emit_initialized, emit_timestamp_threshold_changed, AdminChangedEvent, AggregationMethodChangedEvent, ContractUpgradedEvent,
+    DecimalsChangedEvent, DescriptionChangedEvent, MaxHistoryChangedEvent, MaxInvalidSubmissionsChangedEvent, MinSourcesChangedEvent,
     ResolutionChangedEvent,
 };
 use crate::storage::{get_admin, read_oracle_sources, LEDGER_BUMP, LEDGER_THRESHOLD};
-use crate::types::{DataKey, ErrorCode, OracleSources};
+use crate::types::{AggregationMethod, DataKey, ErrorCode, OracleSources};
 
 const DEFAULT_MAX_HISTORY: u32 = 100;
 const DEFAULT_MIN_SOURCES: u32 = 1;
@@ -14,6 +14,7 @@ const DEFAULT_DECIMALS: u32 = 18;
 pub const DEFAULT_RESOLUTION: u32 = 0;
 pub const DEFAULT_TIMESTAMP_THRESHOLD: u64 = 300; // 5 minutes
 const MAX_DESCRIPTION_LENGTH: u32 = 256;
+const DEFAULT_MAX_INVALID_SUBMISSIONS: u32 = 5;
 
 pub fn initialize(
     env: &Env,
@@ -66,6 +67,14 @@ pub fn initialize(
     env.storage().persistent().set(
         &DataKey::RegisteredAssets,
         &soroban_sdk::Vec::<Address>::new(env),
+    );
+    env.storage().persistent().set(
+        &DataKey::MaxInvalidSubmissions,
+        &DEFAULT_MAX_INVALID_SUBMISSIONS,
+    );
+    env.storage().persistent().set(
+        &DataKey::AggregationMethod,
+        &(AggregationMethod::Median as u32),
     );
     emit_initialized(
         env,
@@ -265,4 +274,54 @@ pub fn get_timestamp_threshold(env: &Env) -> u64 {
         .persistent()
         .get(&key)
         .unwrap_or(DEFAULT_TIMESTAMP_THRESHOLD)
+}
+
+pub fn set_max_invalid_submissions(env: &Env, max_count: u32) {
+    let admin = get_admin(env);
+    admin.require_auth();
+    if max_count == 0 {
+        panic_with_error!(env, ErrorCode::InvalidConfiguration);
+    }
+    env.storage()
+        .persistent()
+        .set(&DataKey::MaxInvalidSubmissions, &max_count);
+    MaxInvalidSubmissionsChangedEvent { value: max_count }.publish(env);
+}
+
+pub fn get_max_invalid_submissions(env: &Env) -> u32 {
+    let key = DataKey::MaxInvalidSubmissions;
+    if env.storage().persistent().has(&key) {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
+    }
+    env.storage()
+        .persistent()
+        .get(&key)
+        .unwrap_or(DEFAULT_MAX_INVALID_SUBMISSIONS)
+}
+
+pub fn set_aggregation_method(env: &Env, method: u32) {
+    let admin = get_admin(env);
+    admin.require_auth();
+    if method > 2 {
+        panic_with_error!(env, ErrorCode::InvalidConfiguration);
+    }
+    env.storage()
+        .persistent()
+        .set(&DataKey::AggregationMethod, &method);
+    AggregationMethodChangedEvent { method }.publish(env);
+}
+
+pub fn get_aggregation_method(env: &Env) -> u32 {
+    let key = DataKey::AggregationMethod;
+    if env.storage().persistent().has(&key) {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
+    }
+    env.storage()
+        .persistent()
+        .get(&key)
+        .unwrap_or(AggregationMethod::Median as u32)
 }

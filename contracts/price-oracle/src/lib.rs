@@ -14,7 +14,7 @@ mod types;
 mod prop_tests;
 
 pub use types::{
-    AggregatePrice, Asset, DataKey, ErrorCode, OracleSources, PriceData, PriceEntry,
+    AggregatePrice, Asset, AggregationMethod, DataKey, ErrorCode, OracleSources, PriceData, PriceEntry,
     PriceHistoryEntry,
 };
 
@@ -107,6 +107,22 @@ impl PriceOracleContract {
         admin::get_timestamp_threshold(&env)
     }
 
+    pub fn set_max_invalid_submissions(env: Env, max_count: u32) {
+        admin::set_max_invalid_submissions(&env, max_count);
+    }
+
+    pub fn get_max_invalid_submissions(env: Env) -> u32 {
+        admin::get_max_invalid_submissions(&env)
+    }
+
+    pub fn set_aggregation_method(env: Env, method: u32) {
+        admin::set_aggregation_method(&env, method);
+    }
+
+    pub fn get_aggregation_method(env: Env) -> u32 {
+        admin::get_aggregation_method(&env)
+    }
+
     // --- Sources ---
 
     pub fn add_source(env: Env, source: Address, name: String) {
@@ -123,6 +139,14 @@ impl PriceOracleContract {
 
     pub fn get_oracle_sources(env: Env) -> OracleSources {
         sources::get_oracle_sources(&env)
+    }
+
+    pub fn is_source_suspended(env: Env, source: Address) -> bool {
+        sources::is_source_suspended(&env, source)
+    }
+
+    pub fn unsuspend_source(env: Env, source: Address) {
+        sources::unsuspend_source(&env, source);
     }
 
     // --- Assets ---
