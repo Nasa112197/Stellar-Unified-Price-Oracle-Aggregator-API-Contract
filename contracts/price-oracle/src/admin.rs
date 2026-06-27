@@ -18,6 +18,7 @@ const MAX_DESCRIPTION_LENGTH: u32 = 256;
 pub const DEFAULT_MAX_PRICE_DEVIATION: u32 = 500; // 5% in basis points
 pub const DEFAULT_HEARTBEAT_INTERVAL: u64 = 3600; // 1 hour
 pub const DEFAULT_MAX_INVALID_SUBMISSIONS: u32 = 5;
+pub const DEFAULT_MAX_SOURCES: u32 = 50;
 
 pub fn initialize(
     env: &Env,
@@ -75,6 +76,10 @@ pub fn initialize(
         &DataKey::MaxInvalidSubmissions,
         &DEFAULT_MAX_INVALID_SUBMISSIONS,
     );
+    env.storage()
+        .persistent()
+        .set(&DataKey::MaxSources, &DEFAULT_MAX_SOURCES);
+
     env.storage().persistent().set(
         &DataKey::AggregationMethod,
         &(AggregationMethod::Median as u32),
@@ -340,4 +345,29 @@ pub fn get_heartbeat_interval(env: &Env) -> u64 {
         .persistent()
         .get(&key)
         .unwrap_or(DEFAULT_HEARTBEAT_INTERVAL)
+}
+
+pub fn set_max_sources(env: &Env, count: u32) {
+    let admin = get_admin(env);
+    admin.require_auth();
+
+    if count == 0 {
+        panic_with_error!(env, ErrorCode::InvalidConfiguration);
+    }
+
+    env.storage().persistent().set(&DataKey::MaxSources, &count);
+}
+
+pub fn get_max_sources(env: &Env) -> u32 {
+    let key = DataKey::MaxSources;
+    if env.storage().persistent().has(&key) {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
+    }
+
+    env.storage()
+        .persistent()
+        .get(&key)
+        .unwrap_or(DEFAULT_MAX_SOURCES)
 }

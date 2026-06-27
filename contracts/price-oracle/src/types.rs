@@ -53,6 +53,9 @@ pub enum DataKey {
     InactiveSource(Address),
     /// Maximum number of invalid submissions allowed before a source is suspended.
     MaxInvalidSubmissions,
+    /// Maximum number of oracle sources allowed to be registered.
+    MaxSources,
+
     /// Currently active [`AggregationMethod`] stored as a `u32` discriminant.
     AggregationMethod,
     /// Optional [`AssetMetadata`] attached to a registered asset.

@@ -42,4 +42,6 @@ pub enum ErrorCode {
     OperationNotFound = 14,
     /// The submitted price is below the asset's configured minimum price floor.
     PriceBelowMinimum = 15,
+    /// Maximum number of oracle sources has been reached.
+    MaxSourcesReached = 16,
 }

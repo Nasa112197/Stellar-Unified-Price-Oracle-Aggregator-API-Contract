@@ -365,6 +365,31 @@ impl PriceOracleContract {
         admin::get_heartbeat_interval(&env)
     }
 
+    /// Sets the maximum number of oracle sources that can be registered.
+    ///
+    /// Admin-only. When the limit is reached, further `add_source` calls fail.
+    ///
+    /// # Arguments
+    ///
+    /// * `env` - The Soroban execution environment.
+    /// * `count` - Maximum number of allowed sources (must be > 0).
+    pub fn set_max_sources(env: Env, count: u32) {
+        admin::set_max_sources(&env, count);
+    }
+
+    /// Returns the current maximum number of oracle sources that can be registered.
+    ///
+    /// # Arguments
+    ///
+    /// * `env` - The Soroban execution environment.
+    ///
+    /// # Returns
+    ///
+    /// Maximum number of allowed sources. Defaults to `50`.
+    pub fn get_max_sources(env: Env) -> u32 {
+        admin::get_max_sources(&env)
+    }
+
     // --- Sources ---
 
     /// Registers a new oracle source authorized to submit prices.
