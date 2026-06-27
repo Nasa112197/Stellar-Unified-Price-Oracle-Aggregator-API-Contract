@@ -36,7 +36,7 @@ pub fn initialize(
     admin.require_auth();
     env.storage().persistent().set(&DataKey::Admin, &admin);
     env.storage().persistent().set(
-        &DataKey::MinSourcesRequired,
+        &DataKey::CfgMinSources,
         &if min_sources_required > 0 {
             min_sources_required
         } else {
@@ -44,7 +44,7 @@ pub fn initialize(
         },
     );
     env.storage().persistent().set(
-        &DataKey::MaxHistoryLength,
+        &DataKey::CfgMaxHistory,
         &if max_history_length > 0 {
             max_history_length
         } else {
@@ -53,30 +53,30 @@ pub fn initialize(
     );
     env.storage()
         .persistent()
-        .set(&DataKey::Resolution, &DEFAULT_RESOLUTION);
+        .set(&DataKey::CfgResolution, &DEFAULT_RESOLUTION);
     env.storage()
         .persistent()
-        .set(&DataKey::Decimals, &decimals);
+        .set(&DataKey::CfgDecimals, &decimals);
     env.storage()
         .persistent()
-        .set(&DataKey::Description, &description);
+        .set(&DataKey::CfgDescription, &description);
     env.storage().persistent().set(
-        &DataKey::OracleSources,
+        &DataKey::SrcRegistry,
         &OracleSources {
             sources: soroban_sdk::Vec::new(env),
             metadata: soroban_sdk::Map::new(env),
         },
     );
     env.storage().persistent().set(
-        &DataKey::RegisteredAssets,
+        &DataKey::AssetRegistry,
         &soroban_sdk::Vec::<Address>::new(env),
     );
     env.storage().persistent().set(
-        &DataKey::MaxInvalidSubmissions,
+        &DataKey::CfgMaxInvalidSubs,
         &DEFAULT_MAX_INVALID_SUBMISSIONS,
     );
     env.storage().persistent().set(
-        &DataKey::AggregationMethod,
+        &DataKey::CfgAggregationMethod,
         &(AggregationMethod::Median as u32),
     );
     emit_initialized(
@@ -140,12 +140,12 @@ pub fn set_min_sources_required(env: &Env, new_min: u32) {
     }
     env.storage()
         .persistent()
-        .set(&DataKey::MinSourcesRequired, &new_min);
+        .set(&DataKey::CfgMinSources, &new_min);
     MinSourcesChangedEvent { value: new_min }.publish(env);
 }
 
 pub fn get_min_sources_required(env: &Env) -> u32 {
-    let key = DataKey::MinSourcesRequired;
+    let key = DataKey::CfgMinSources;
     if env.storage().persistent().has(&key) {
         env.storage()
             .persistent()
@@ -162,12 +162,12 @@ pub fn set_max_history_length(env: &Env, new_max: u32) {
     admin.require_auth();
     env.storage()
         .persistent()
-        .set(&DataKey::MaxHistoryLength, &new_max);
+        .set(&DataKey::CfgMaxHistory, &new_max);
     MaxHistoryChangedEvent { value: new_max }.publish(env);
 }
 
 pub fn get_max_history_length(env: &Env) -> u32 {
-    let key = DataKey::MaxHistoryLength;
+    let key = DataKey::CfgMaxHistory;
     if env.storage().persistent().has(&key) {
         env.storage()
             .persistent()
@@ -184,7 +184,7 @@ pub fn set_resolution(env: &Env, new_resolution: u32) {
     admin.require_auth();
     env.storage()
         .persistent()
-        .set(&DataKey::Resolution, &new_resolution);
+        .set(&DataKey::CfgResolution, &new_resolution);
     ResolutionChangedEvent {
         value: new_resolution,
     }
@@ -192,7 +192,7 @@ pub fn set_resolution(env: &Env, new_resolution: u32) {
 }
 
 pub fn get_resolution(env: &Env) -> u32 {
-    let key = DataKey::Resolution;
+    let key = DataKey::CfgResolution;
     if env.storage().persistent().has(&key) {
         env.storage()
             .persistent()
@@ -209,7 +209,7 @@ pub fn set_decimals(env: &Env, new_decimals: u32) {
     admin.require_auth();
     env.storage()
         .persistent()
-        .set(&DataKey::Decimals, &new_decimals);
+        .set(&DataKey::CfgDecimals, &new_decimals);
     DecimalsChangedEvent {
         value: new_decimals,
     }
@@ -217,7 +217,7 @@ pub fn set_decimals(env: &Env, new_decimals: u32) {
 }
 
 pub fn get_decimals(env: &Env) -> u32 {
-    let key = DataKey::Decimals;
+    let key = DataKey::CfgDecimals;
     if env.storage().persistent().has(&key) {
         env.storage()
             .persistent()
@@ -237,7 +237,7 @@ pub fn set_description(env: &Env, new_description: String) {
     }
     env.storage()
         .persistent()
-        .set(&DataKey::Description, &new_description);
+        .set(&DataKey::CfgDescription, &new_description);
     DescriptionChangedEvent {
         description: new_description.clone(),
     }
@@ -245,7 +245,7 @@ pub fn set_description(env: &Env, new_description: String) {
 }
 
 pub fn get_description(env: &Env) -> String {
-    let key = DataKey::Description;
+    let key = DataKey::CfgDescription;
     if env.storage().persistent().has(&key) {
         env.storage()
             .persistent()
@@ -258,7 +258,7 @@ pub fn get_description(env: &Env) -> String {
 }
 
 pub fn get_aggregation_method(env: &Env) -> u32 {
-    let key = DataKey::AggregationMethod;
+    let key = DataKey::CfgAggregationMethod;
     if env.storage().persistent().has(&key) {
         env.storage()
             .persistent()
@@ -275,12 +275,12 @@ pub fn set_timestamp_threshold(env: &Env, threshold: u64) {
     admin.require_auth();
     env.storage()
         .persistent()
-        .set(&DataKey::TimestampThreshold, &threshold);
+        .set(&DataKey::CfgTimestampThreshold, &threshold);
     emit_timestamp_threshold_changed(env, admin, threshold);
 }
 
 pub fn get_timestamp_threshold(env: &Env) -> u64 {
-    let key = DataKey::TimestampThreshold;
+    let key = DataKey::CfgTimestampThreshold;
     if env.storage().persistent().has(&key) {
         env.storage()
             .persistent()
@@ -300,12 +300,12 @@ pub fn set_max_price_deviation(env: &Env, deviation_basis_points: u32) {
     }
     env.storage()
         .persistent()
-        .set(&DataKey::MaxPriceDeviation, &deviation_basis_points);
+        .set(&DataKey::CfgMaxDeviation, &deviation_basis_points);
     emit_max_price_deviation_changed(env, admin, deviation_basis_points);
 }
 
 pub fn get_max_price_deviation(env: &Env) -> u32 {
-    let key = DataKey::MaxPriceDeviation;
+    let key = DataKey::CfgMaxDeviation;
     if env.storage().persistent().has(&key) {
         env.storage()
             .persistent()
@@ -325,12 +325,12 @@ pub fn set_heartbeat_interval(env: &Env, interval: u64) {
     }
     env.storage()
         .persistent()
-        .set(&DataKey::HeartbeatInterval, &interval);
+        .set(&DataKey::CfgHeartbeatInterval, &interval);
     HeartbeatIntervalChangedEvent { value: interval }.publish(env);
 }
 
 pub fn get_heartbeat_interval(env: &Env) -> u64 {
-    let key = DataKey::HeartbeatInterval;
+    let key = DataKey::CfgHeartbeatInterval;
     if env.storage().persistent().has(&key) {
         env.storage()
             .persistent()

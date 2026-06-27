@@ -4,70 +4,97 @@ pub use crate::errors::ErrorCode;
 
 /// Storage keys used to address contract state in persistent, temporary, and instance storage.
 ///
-/// Each variant uniquely identifies a piece of data stored on-chain. Address-keyed variants
-/// allow per-address records while symbol-keyed variants hold global configuration.
+/// ## Key Schema (namespace → variants)
+///
+/// | Namespace | Prefix | Variants |
+/// |-----------|--------|----------|
+/// | Admin identity | (none) | `Admin` |
+/// | Global config | `Cfg` | `CfgMinSources`, `CfgMaxHistory`, `CfgResolution`, `CfgDecimals`, `CfgDescription`, `CfgTimestampThreshold`, `CfgMaxDeviation`, `CfgHeartbeatInterval`, `CfgMaxInvalidSubs`, `CfgAggregationMethod`, `CfgPauseFlag`, `CfgTimelockDuration` |
+/// | Source registry | `Src` | `SrcActive(addr)`, `SrcRegistry`, `SrcHeartbeat(addr)`, `SrcInactive(addr)` |
+/// | Asset registry | `Asset` | `AssetRegistered(addr)`, `AssetRegistry`, `AssetMetadata(addr)`, `AssetMinPrice(addr)` |
+/// | Price data | `Price` | `Submission(asset, src)`, `PriceSubmissionLedger(asset, src)`, `Aggregate(asset)`, `PriceOverride(asset)`, `PriceDeviant(asset, src)` |
+/// | History | `Hist` | `PriceHistory(asset, ledger)`, `PriceHistoryLedgers(asset)` |
+/// | Timelock ops | `Tl` | `TlPendingOpCount`, `TlPendingOp(id)` |
+///
+/// Soroban encodes each variant name as an XDR `Symbol` discriminant, so variants are
+/// inherently collision-free. The namespace prefixes make the category explicit at the
+/// call site and prevent accidental re-use of a name across categories in future additions.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[contracttype]
 pub enum DataKey {
+    // --- Admin ---
     /// The contract administrator's address.
     Admin,
+
+    // --- Global config (prefix: Cfg) ---
+    /// Minimum number of contributing sources required to publish an aggregate price.
+    CfgMinSources,
+    /// Maximum number of history entries retained per asset before pruning.
+    CfgMaxHistory,
+    /// Price resolution window in seconds (SEP-40 `resolution` field).
+    CfgResolution,
+    /// Decimal precision applied to all prices stored by this contract.
+    CfgDecimals,
+    /// Human-readable description of this oracle instance.
+    CfgDescription,
+    /// Maximum allowed difference (in seconds) between a submitted timestamp and ledger time.
+    CfgTimestampThreshold,
+    /// Maximum allowed price deviation in basis points before flagging a submission.
+    CfgMaxDeviation,
+    /// Interval in seconds after which a source with no heartbeat is considered inactive.
+    CfgHeartbeatInterval,
+    /// Maximum number of invalid submissions allowed before a source is suspended.
+    CfgMaxInvalidSubs,
+    /// Currently active [`AggregationMethod`] stored as a `u32` discriminant.
+    CfgAggregationMethod,
+    /// Boolean flag indicating whether the contract is paused.
+    CfgPauseFlag,
+    /// Number of ledgers that must pass between proposing and executing a timelock operation.
+    CfgTimelockDuration,
+
+    // --- Source registry (prefix: Src) ---
     /// Existence flag for a registered oracle source (`true` when present).
-    Source(Address),
+    SrcActive(Address),
+    /// The [`OracleSources`] registry (list of sources and their metadata).
+    SrcRegistry,
+    /// Unix timestamp of the last heartbeat submitted by a source.
+    SrcHeartbeat(Address),
+    /// Inactive flag for a source.
+    SrcInactive(Address),
+
+    // --- Asset registry (prefix: Asset) ---
     /// Existence flag for a registered asset (`true` when present).
     AssetRegistered(Address),
-    /// Latest [`PriceEntry`] submitted by a specific source for a specific asset.
-    Submission(Address, Address),
-    /// Ledger sequence number of the last submission by a source for an asset.
-    SubmissionLedger(Address, Address),
-    /// Latest [`AggregatePrice`] computed across all contributing sources for an asset.
-    Aggregate(Address),
-    /// [`PriceHistoryEntry`] recorded at a specific ledger for an asset (temporary storage).
-    PriceHistory(Address, u32),
-    /// Ordered list of ledger numbers for which history exists for an asset.
-    PriceHistoryLedgers(Address),
-    /// The [`OracleSources`] registry (list of sources and their metadata).
-    OracleSources,
     /// Ordered list of all registered asset addresses.
-    RegisteredAssets,
-    /// Minimum number of contributing sources required to publish an aggregate price.
-    MinSourcesRequired,
-    /// Maximum number of history entries retained per asset before pruning.
-    MaxHistoryLength,
-    /// Price resolution window in seconds (SEP-40 `resolution` field).
-    Resolution,
-    /// Decimal precision applied to all prices stored by this contract.
-    Decimals,
-    /// Human-readable description of this oracle instance.
-    Description,
-    /// Maximum allowed difference (in seconds) between a submitted timestamp and ledger time.
-    TimestampThreshold,
-    /// Maximum allowed price deviation in basis points before flagging a submission.
-    MaxPriceDeviation,
-    /// Flag set when a source's submission deviates excessively from the current aggregate.
-    SubmissionDeviant(Address, Address),
-    /// Unix timestamp of the last heartbeat submitted by a source.
-    SourceHeartbeat(Address),
-    /// Interval in seconds after which a source with no heartbeat is considered inactive.
-    HeartbeatInterval,
-    /// Inactive flag for a source.
-    InactiveSource(Address),
-    /// Maximum number of invalid submissions allowed before a source is suspended.
-    MaxInvalidSubmissions,
-    /// Currently active [`AggregationMethod`] stored as a `u32` discriminant.
-    AggregationMethod,
+    AssetRegistry,
     /// Optional [`AssetMetadata`] attached to a registered asset.
     AssetMetadata(Address),
     /// Optional minimum accepted price (`i128`) for a registered asset.
     AssetMinPrice(Address),
-    /// Boolean flag indicating whether the contract is paused.
-    PauseFlag,
-    /// Monotonically incrementing counter used to assign IDs to pending operations.
-    PendingOpCount,
-    /// A [`PendingOperation`] awaiting timelock expiry before execution.
-    PendingOp(u32),
-    /// Number of ledgers that must pass between proposing and executing a timelock operation.
-    TimelockDuration,
+
+    // --- Price data (prefix: Price) ---
+    /// Latest [`PriceEntry`] submitted by a specific source for a specific asset.
+    Submission(Address, Address),
+    /// Ledger sequence number of the last submission by a source for an asset.
+    PriceSubmissionLedger(Address, Address),
+    /// Latest [`AggregatePrice`] computed across all contributing sources for an asset.
+    Aggregate(Address),
+    /// Active price override for an asset.
     PriceOverride(Address),
+    /// Flag set when a source's submission deviates excessively from the current aggregate.
+    PriceDeviant(Address, Address),
+
+    // --- History (prefix: Hist via PriceHistory name) ---
+    /// [`PriceHistoryEntry`] recorded at a specific ledger for an asset (temporary storage).
+    PriceHistory(Address, u32),
+    /// Ordered list of ledger numbers for which history exists for an asset.
+    PriceHistoryLedgers(Address),
+
+    // --- Timelock operations (prefix: Tl) ---
+    /// Monotonically incrementing counter used to assign IDs to pending operations.
+    TlPendingOpCount,
+    /// A [`PendingOperation`] awaiting timelock expiry before execution.
+    TlPendingOp(u32),
 }
 
 /// A price submission from a single oracle source for a specific asset.
