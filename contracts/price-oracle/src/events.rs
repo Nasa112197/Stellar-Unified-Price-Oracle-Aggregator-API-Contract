@@ -455,3 +455,53 @@ pub struct PriceOverrideExpiredEvent {
     pub expiry_ledger: u32,
     pub current_ledger: u32,
 }
+
+/// Emitted when per-asset history is pruned beyond `max_history_per_asset` (issue #94).
+///
+/// Topics: `asset`
+#[contractevent]
+#[derive(Clone)]
+pub struct HistoryPerAssetPrunedEvent {
+    #[topic]
+    pub asset: Address,
+    /// Ledger removed from the history index.
+    pub pruned_ledger: u32,
+    /// Remaining entry count after pruning.
+    pub remaining: u32,
+}
+
+/// Emitted when the `max_history_per_asset` limit is changed (issue #94).
+#[contractevent]
+#[derive(Clone)]
+pub struct MaxHistoryPerAssetChangedEvent {
+    pub value: u32,
+}
+
+/// Emitted when the event-per-call cap is exceeded in a single invocation (issue #92).
+/// The transaction still succeeds; this is a warning only.
+///
+/// Topics: `asset`
+#[contractevent]
+#[derive(Clone)]
+pub struct EventLimitWarningEvent {
+    #[topic]
+    pub asset: Address,
+    /// Number of events that would have been emitted.
+    pub event_count: u32,
+    /// Configured cap that was exceeded.
+    pub max_events: u32,
+}
+
+/// Emitted when the `max_events_per_call` limit is changed (issue #92).
+#[contractevent]
+#[derive(Clone)]
+pub struct MaxEventsPerCallChangedEvent {
+    pub value: u32,
+}
+
+/// Emitted when the `max_aggregation_sources` limit is changed (issue #93).
+#[contractevent]
+#[derive(Clone)]
+pub struct MaxAggregationSourcesChangedEvent {
+    pub value: u32,
+}

@@ -365,6 +365,56 @@ impl PriceOracleContract {
         admin::get_heartbeat_interval(&env)
     }
 
+    // --- Issue #94: per-asset history cap ---
+
+    /// Sets the maximum number of price history entries retained per asset.
+    /// When exceeded, oldest entries are pruned. Default is `1000`.
+    ///
+    /// # Errors
+    /// * [`ErrorCode::NotAuthorized`] — caller is not the admin.
+    pub fn set_max_history_per_asset(env: Env, new_max: u32) {
+        admin::set_max_history_per_asset(&env, new_max);
+    }
+
+    /// Returns the current per-asset history entry cap. Defaults to `1000`.
+    pub fn get_max_history_per_asset(env: Env) -> u32 {
+        admin::get_max_history_per_asset(&env)
+    }
+
+    // --- Issue #92: event spam protection ---
+
+    /// Sets the maximum number of events emitted per `submit_price` call.
+    /// Exceeding the cap emits a warning event; the transaction still succeeds.
+    /// Default is `20`.
+    ///
+    /// # Errors
+    /// * [`ErrorCode::NotAuthorized`] — caller is not the admin.
+    pub fn set_max_events_per_call(env: Env, new_max: u32) {
+        admin::set_max_events_per_call(&env, new_max);
+    }
+
+    /// Returns the current per-call event cap. Defaults to `20`.
+    pub fn get_max_events_per_call(env: Env) -> u32 {
+        admin::get_max_events_per_call(&env)
+    }
+
+    // --- Issue #93: random source selection ---
+
+    /// Sets the maximum number of sources used per aggregation.
+    /// When sources > limit, a deterministic random subset is selected using the ledger
+    /// sequence as a seed. Set to `0` to disable (use all sources). Default is `0`.
+    ///
+    /// # Errors
+    /// * [`ErrorCode::NotAuthorized`] — caller is not the admin.
+    pub fn set_max_aggregation_sources(env: Env, new_max: u32) {
+        admin::set_max_aggregation_sources(&env, new_max);
+    }
+
+    /// Returns the current maximum aggregation sources limit. Defaults to `0` (no limit).
+    pub fn get_max_aggregation_sources(env: Env) -> u32 {
+        admin::get_max_aggregation_sources(&env)
+    }
+
     // --- Sources ---
 
     /// Registers a new oracle source authorized to submit prices.

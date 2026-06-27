@@ -3,7 +3,8 @@ use soroban_sdk::{panic_with_error, Address, Env, String};
 use crate::events::{
     emit_initialized, emit_max_price_deviation_changed, emit_timestamp_threshold_changed,
     AdminChangedEvent, ContractUpgradedEvent, DecimalsChangedEvent, DescriptionChangedEvent,
-    HeartbeatIntervalChangedEvent, MaxHistoryChangedEvent, MinSourcesChangedEvent,
+    HeartbeatIntervalChangedEvent, MaxAggregationSourcesChangedEvent, MaxEventsPerCallChangedEvent,
+    MaxHistoryChangedEvent, MaxHistoryPerAssetChangedEvent, MinSourcesChangedEvent,
     ResolutionChangedEvent,
 };
 use crate::storage::{get_admin, read_oracle_sources, LEDGER_BUMP, LEDGER_THRESHOLD};
@@ -18,6 +19,12 @@ const MAX_DESCRIPTION_LENGTH: u32 = 256;
 pub const DEFAULT_MAX_PRICE_DEVIATION: u32 = 500; // 5% in basis points
 pub const DEFAULT_HEARTBEAT_INTERVAL: u64 = 3600; // 1 hour
 pub const DEFAULT_MAX_INVALID_SUBMISSIONS: u32 = 5;
+/// Default per-asset history cap (issue #94).
+pub const DEFAULT_MAX_HISTORY_PER_ASSET: u32 = 1000;
+/// Default maximum events per call (issue #92).
+pub const DEFAULT_MAX_EVENTS_PER_CALL: u32 = 20;
+/// Default maximum aggregation sources; 0 means no limit (issue #93).
+pub const DEFAULT_MAX_AGGREGATION_SOURCES: u32 = 0;
 
 pub fn initialize(
     env: &Env,
@@ -340,4 +347,76 @@ pub fn get_heartbeat_interval(env: &Env) -> u64 {
         .persistent()
         .get(&key)
         .unwrap_or(DEFAULT_HEARTBEAT_INTERVAL)
+}
+
+// --- Issue #94: per-asset history cap ---
+
+pub fn set_max_history_per_asset(env: &Env, new_max: u32) {
+    let admin = get_admin(env);
+    admin.require_auth();
+    env.storage()
+        .persistent()
+        .set(&DataKey::MaxHistoryPerAsset, &new_max);
+    MaxHistoryPerAssetChangedEvent { value: new_max }.publish(env);
+}
+
+pub fn get_max_history_per_asset(env: &Env) -> u32 {
+    let key = DataKey::MaxHistoryPerAsset;
+    if env.storage().persistent().has(&key) {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
+    }
+    env.storage()
+        .persistent()
+        .get(&key)
+        .unwrap_or(DEFAULT_MAX_HISTORY_PER_ASSET)
+}
+
+// --- Issue #92: max events per call ---
+
+pub fn set_max_events_per_call(env: &Env, new_max: u32) {
+    let admin = get_admin(env);
+    admin.require_auth();
+    env.storage()
+        .persistent()
+        .set(&DataKey::MaxEventsPerCall, &new_max);
+    MaxEventsPerCallChangedEvent { value: new_max }.publish(env);
+}
+
+pub fn get_max_events_per_call(env: &Env) -> u32 {
+    let key = DataKey::MaxEventsPerCall;
+    if env.storage().persistent().has(&key) {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
+    }
+    env.storage()
+        .persistent()
+        .get(&key)
+        .unwrap_or(DEFAULT_MAX_EVENTS_PER_CALL)
+}
+
+// --- Issue #93: max aggregation sources ---
+
+pub fn set_max_aggregation_sources(env: &Env, new_max: u32) {
+    let admin = get_admin(env);
+    admin.require_auth();
+    env.storage()
+        .persistent()
+        .set(&DataKey::MaxAggregationSources, &new_max);
+    MaxAggregationSourcesChangedEvent { value: new_max }.publish(env);
+}
+
+pub fn get_max_aggregation_sources(env: &Env) -> u32 {
+    let key = DataKey::MaxAggregationSources;
+    if env.storage().persistent().has(&key) {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
+    }
+    env.storage()
+        .persistent()
+        .get(&key)
+        .unwrap_or(DEFAULT_MAX_AGGREGATION_SOURCES)
 }

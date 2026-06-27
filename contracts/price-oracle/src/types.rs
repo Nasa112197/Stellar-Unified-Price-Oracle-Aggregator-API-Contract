@@ -68,6 +68,13 @@ pub enum DataKey {
     /// Number of ledgers that must pass between proposing and executing a timelock operation.
     TimelockDuration,
     PriceOverride(Address),
+    /// Per-asset maximum number of price entries before the oldest is pruned (issue #94).
+    MaxHistoryPerAsset,
+    /// Maximum number of events that may be emitted in a single call (issue #92).
+    MaxEventsPerCall,
+    /// Maximum number of sources used for aggregation; excess sources are randomly
+    /// sub-sampled using the ledger hash (issue #93).
+    MaxAggregationSources,
 }
 
 /// A price submission from a single oracle source for a specific asset.
