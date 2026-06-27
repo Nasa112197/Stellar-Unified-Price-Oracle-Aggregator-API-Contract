@@ -262,12 +262,32 @@ pub struct OperationCancelledEvent {
     pub cancelled_by: Address,
 }
 
-/// Emitted by every admin function to provide a comprehensive audit trail.
-/// `action` identifies the operation; `params` carries optional encoded data.
-#[allow(deprecated)]
-pub fn emit_admin_action(env: &soroban_sdk::Env, action: Symbol, caller: Address, params: Bytes) {
-    let ledger = env.ledger().sequence();
-    let sym = symbol_short!("adm_act");
-    env.events()
-        .publish((sym, action, caller), (ledger, params));
+#[contractevent]
+#[derive(Clone)]
+pub struct PriceOverrideSetEvent {
+    #[topic]
+    pub asset: Address,
+    #[topic]
+    pub admin: Address,
+    pub price: i128,
+    pub reason: String,
+    pub expiry_ledger: u32,
+}
+
+#[contractevent]
+#[derive(Clone)]
+pub struct PriceOverrideRemovedEvent {
+    #[topic]
+    pub asset: Address,
+    #[topic]
+    pub admin: Address,
+}
+
+#[contractevent]
+#[derive(Clone)]
+pub struct PriceOverrideExpiredEvent {
+    #[topic]
+    pub asset: Address,
+    pub expiry_ledger: u32,
+    pub current_ledger: u32,
 }
