@@ -1103,3 +1103,53 @@ fn test_removed_source_is_no_longer_source() {
     client.remove_source(&source);
     assert!(!client.is_source(&source));
 }
+
+// ===== Issue #81: Reentrancy Guard Tests =====
+
+#[test]
+fn test_reentrancy_guard_normal_submit_price_succeeds() {
+    // Verifies that a normal (non-reentrant) call to a guarded endpoint succeeds
+    let e = Env::default();
+    ledger_default(&e, 100, 10000);
+    let (client, _) = setup_contract(&e);
+    client.set_min_sources_required(&1u32);
+    let source = register_test_source(&e, &client, "Oracle");
+    let asset = register_test_asset(&e, &client);
+    // Each client call is a fresh invocation; guard is enter/exit'd cleanly
+    submit_test_price(&client, &source, &asset, 100i128, 9999);
+    let price = client.get_price(&asset, &0u64);
+    assert!(price.is_some());
+    assert_eq!(price.unwrap().price, 100i128);
+}
+
+#[test]
+fn test_reentrancy_guard_sequential_calls_succeed() {
+    // Two sequential calls (not nested) should both succeed
+    let e = Env::default();
+    ledger_default(&e, 100, 10000);
+    let (client, _) = setup_contract(&e);
+    client.set_min_sources_required(&1u32);
+    let source = register_test_source(&e, &client, "Oracle");
+    let asset = register_test_asset(&e, &client);
+
+    submit_test_price(&client, &source, &asset, 100i128, 9998);
+    submit_test_price(&client, &source, &asset, 200i128, 9999);
+    let price = client.get_price(&asset, &0u64);
+    assert!(price.is_some());
+    assert_eq!(price.unwrap().price, 200i128);
+}
+
+#[test]
+fn test_reentrancy_guard_all_write_endpoints_succeed() {
+    // Spot-check that guarded write endpoints work normally (guard doesn't break them)
+    let e = Env::default();
+    let (client, _) = setup_contract(&e);
+    client.set_decimals(&6u32);
+    assert_eq!(client.get_decimals(), 6u32);
+    client.set_min_sources_required(&1u32);
+    assert_eq!(client.get_min_sources_required(), 1u32);
+    client.set_max_history_length(&50u32);
+    assert_eq!(client.get_max_history_length(), 50u32);
+    client.set_description(&String::from_str(&e, "Updated"));
+    assert_eq!(client.get_description(), String::from_str(&e, "Updated"));
+}
