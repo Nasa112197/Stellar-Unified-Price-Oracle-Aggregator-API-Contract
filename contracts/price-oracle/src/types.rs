@@ -34,6 +34,12 @@ pub enum DataKey {
     PendingOpCount,
     PendingOp(u32),
     TimelockDuration,
+    // #65 source reputation
+    SourceReputation(Address),
+    ReputationDecayFactor,
+    // #66 phased removal
+    SourcePendingRemoval(Address),
+    RemovalCooldown,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

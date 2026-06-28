@@ -1103,3 +1103,198 @@ fn test_removed_source_is_no_longer_source() {
     client.remove_source(&source);
     assert!(!client.is_source(&source));
 }
+
+// ---- Issue #65: Source Reputation Scoring ----
+
+#[test]
+fn test_reputation_starts_at_50() {
+    let e = Env::default();
+    let (client, _) = setup_contract(&e);
+    let source = register_test_source(&e, &client, "Oracle");
+    assert_eq!(client.get_source_reputation(&source), 50i128);
+}
+
+#[test]
+fn test_reputation_increases_when_close_to_median() {
+    let e = Env::default();
+    ledger_default(&e, 100, 1000);
+
+    let (client, _) = setup_contract(&e);
+    client.set_min_sources_required(&1u32);
+    let source = register_test_source(&e, &client, "Oracle");
+    let asset = register_test_asset(&e, &client);
+
+    // Submit price exactly at the median (only source, so median = its price)
+    submit_test_price(&client, &source, &asset, 1000i128, 1000);
+
+    // With 0 deviation, accuracy = 100; score moves toward 100
+    let score = client.get_source_reputation(&source);
+    assert!(score > 50i128, "score should increase: {score}");
+}
+
+#[test]
+fn test_reputation_decreases_when_far_from_median() {
+    let e = Env::default();
+    ledger_default(&e, 100, 1000);
+
+    let (client, _) = setup_contract(&e);
+    client.set_min_sources_required(&2u32);
+    let source1 = register_test_source(&e, &client, "Accurate");
+    let source2 = register_test_source(&e, &client, "Deviant");
+    let asset = register_test_asset(&e, &client);
+
+    // source2 deviates heavily — median is between 1000 and 2000, source2 is 100% off median
+    submit_test_price(&client, &source1, &asset, 1000i128, 1000);
+    submit_test_price(&client, &source2, &asset, 50i128, 1000);
+
+    // source2 has low accuracy, score should drop below 50
+    let score = client.get_source_reputation(&source2);
+    assert!(score < 50i128, "score should decrease: {score}");
+}
+
+#[test]
+fn test_reputation_decay_factor_configurable() {
+    let e = Env::default();
+    let (client, _) = setup_contract(&e);
+    assert_eq!(client.get_reputation_decay_factor(), 10u32);
+    client.set_reputation_decay_factor(&25u32);
+    assert_eq!(client.get_reputation_decay_factor(), 25u32);
+}
+
+#[test]
+fn test_reputation_improves_over_multiple_accurate_submissions() {
+    let e = Env::default();
+    ledger_default(&e, 100, 1000);
+
+    let (client, _) = setup_contract(&e);
+    client.set_min_sources_required(&1u32);
+    let source = register_test_source(&e, &client, "Oracle");
+    let asset = register_test_asset(&e, &client);
+
+    // Submit accurate prices multiple times — each time score moves toward 100
+    for i in 0u64..5 {
+        ledger_default(&e, 100 + i as u32, 1000 + i);
+        submit_test_price(&client, &source, &asset, 1000i128, 1000 + i);
+    }
+
+    let score = client.get_source_reputation(&source);
+    assert!(score > 55i128, "reputation should have grown: {score}");
+}
+
+// ---- Issue #66: Phased Source Removal ----
+
+#[test]
+fn test_phased_removal_default_cooldown() {
+    let e = Env::default();
+    let (client, _) = setup_contract(&e);
+    assert_eq!(client.get_removal_cooldown(), 100u32);
+}
+
+#[test]
+fn test_set_removal_cooldown() {
+    let e = Env::default();
+    let (client, _) = setup_contract(&e);
+    client.set_removal_cooldown(&200u32);
+    assert_eq!(client.get_removal_cooldown(), 200u32);
+}
+
+#[test]
+fn test_mark_source_for_removal() {
+    let e = Env::default();
+    ledger_default(&e, 50, 1000);
+    let (client, _) = setup_contract(&e);
+    let source = register_test_source(&e, &client, "Oracle");
+
+    assert!(!client.is_source_pending_removal(&source));
+    client.mark_source_for_removal(&source);
+    assert!(client.is_source_pending_removal(&source));
+
+    // Source should still be active during cooldown
+    assert!(client.is_source(&source));
+}
+
+#[test]
+fn test_cancel_source_removal() {
+    let e = Env::default();
+    ledger_default(&e, 50, 1000);
+    let (client, _) = setup_contract(&e);
+    let source = register_test_source(&e, &client, "Oracle");
+
+    client.mark_source_for_removal(&source);
+    assert!(client.is_source_pending_removal(&source));
+
+    client.cancel_source_removal(&source);
+    assert!(!client.is_source_pending_removal(&source));
+    // Source is still active
+    assert!(client.is_source(&source));
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #17)")]
+fn test_finalize_removal_before_cooldown_fails() {
+    let e = Env::default();
+    ledger_default(&e, 50, 1000);
+    let (client, _) = setup_contract(&e);
+    client.set_removal_cooldown(&100u32);
+    let source = register_test_source(&e, &client, "Oracle");
+
+    client.mark_source_for_removal(&source);
+
+    // Advance ledger but not past cooldown (50 + 50 = 100, needs >= 150)
+    ledger_default(&e, 100, 2000);
+    client.finalize_source_removal(&source);
+}
+
+#[test]
+fn test_finalize_removal_after_cooldown_succeeds() {
+    let e = Env::default();
+    ledger_default(&e, 50, 1000);
+    let (client, _) = setup_contract(&e);
+    client.set_removal_cooldown(&100u32);
+    let source = register_test_source(&e, &client, "Oracle");
+
+    client.mark_source_for_removal(&source);
+
+    // Advance past cooldown: 50 + 100 = 150
+    ledger_default(&e, 151, 3000);
+    client.finalize_source_removal(&source);
+
+    assert!(!client.is_source(&source));
+    assert!(!client.is_source_pending_removal(&source));
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #16)")]
+fn test_cancel_removal_not_pending_fails() {
+    let e = Env::default();
+    let (client, _) = setup_contract(&e);
+    let source = register_test_source(&e, &client, "Oracle");
+    // Never marked for removal
+    client.cancel_source_removal(&source);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #16)")]
+fn test_finalize_removal_not_pending_fails() {
+    let e = Env::default();
+    let (client, _) = setup_contract(&e);
+    let source = register_test_source(&e, &client, "Oracle");
+    client.finalize_source_removal(&source);
+}
+
+#[test]
+fn test_pending_source_still_submits_prices() {
+    let e = Env::default();
+    ledger_default(&e, 50, 1000);
+    let (client, _) = setup_contract(&e);
+    client.set_min_sources_required(&1u32);
+    let source = register_test_source(&e, &client, "Oracle");
+    let asset = register_test_asset(&e, &client);
+
+    client.mark_source_for_removal(&source);
+
+    // Source still active during cooldown, can still submit
+    submit_test_price(&client, &source, &asset, 1000i128, 1000);
+    let price = client.get_price(&asset, &0u64);
+    assert!(price.is_some());
+}

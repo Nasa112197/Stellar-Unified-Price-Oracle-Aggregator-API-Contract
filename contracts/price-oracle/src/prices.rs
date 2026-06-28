@@ -173,6 +173,16 @@ pub fn submit_price(env: &Env, source: Address, asset: Address, price: i128, tim
             timestamp: latest_timestamp,
         }
         .publish(env);
+
+        // #65: update reputation for each contributing source
+        for i in 0..total_sources {
+            let src = oracle_sources.sources.get_unchecked(i);
+            let sub_key = DataKey::Submission(asset.clone(), src.clone());
+            let sub: Option<PriceEntry> = env.storage().persistent().get(&sub_key);
+            if let Some(entry_data) = sub {
+                crate::sources::update_source_reputation(env, &src, entry_data.price, median_price);
+            }
+        }
     } else {
         SourcesInsufficientEvent {
             asset: asset.clone(),
