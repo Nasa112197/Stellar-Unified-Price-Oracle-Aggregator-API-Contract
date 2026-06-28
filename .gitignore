@@ -2,24 +2,26 @@
 /target
 **/*.wasm
 
-# Test infrastructure
+# Test snapshots
 test_snapshots/
 
-# Kiro IDE
+# Kiro AI agent state
 .kiro/
 
-# Node / npm
+# Node.js
 node_modules/
 npm-debug.log*
 
-# Environment files
+# Environment / secrets
 .env
 .env.*
 !.env.example
 
-# Editor / OS
-.DS_Store
+# IDE
 .vscode/
 .idea/
-*.swp
-*.swo
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db

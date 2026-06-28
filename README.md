@@ -175,6 +175,16 @@ make test
 
 All **79 tests pass** with zero warnings.
 
+### End-to-End Testnet Test
+
+Deploys the contract to Stellar testnet and runs a full lifecycle test:
+
+```bash
+./scripts/e2e-testnet.sh
+```
+
+See [docs/e2e-testnet.md](docs/e2e-testnet.md) for prerequisites, configuration, and expected output.
+
 ### Deploy
 
 ```bash
@@ -230,6 +240,19 @@ contracts/price-oracle/
 
 See [`docs/error-codes.md`](docs/error-codes.md) for the full registry with causes and resolutions.
 
+## Documentation
+
+| Document | Description |
+|---|---|
+| [Architecture](docs/ARCHITECTURE.md) | System design, data flow, module structure |
+| [Deployment Record](docs/deployment.md) | Contract addresses, initialization parameters, admin addresses, deployment checklist |
+| [Security Audit Checklist](docs/security-audit-checklist.md) | Pre-audit review items: access control, input validation, arithmetic safety, storage safety, upgrade mechanism, event integrity, known patterns |
+| [Monitoring Dashboard](docs/monitoring/README.md) | Grafana dashboard setup and metrics reference |
+
 ## License
 
 MIT
+
+## Service Level Agreement
+
+See [docs/SLA.md](docs/SLA.md) for price freshness guarantees, uptime commitments, deviation thresholds, incident response times, and compensation terms.
