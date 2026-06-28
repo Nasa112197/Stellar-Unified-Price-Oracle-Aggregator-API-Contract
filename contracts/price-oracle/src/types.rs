@@ -11,6 +11,7 @@ pub use crate::errors::ErrorCode;
 pub enum DataKey {
     /// The contract administrator's address.
     Admin,
+    ReentrancyGuard,
     /// Existence flag for a registered oracle source (`true` when present).
     Source(Address),
     /// Existence flag for a registered asset (`true` when present).
@@ -59,6 +60,9 @@ pub enum DataKey {
     AssetMetadata(Address),
     /// Optional minimum accepted price (`i128`) for a registered asset.
     AssetMinPrice(Address),
+    /// Configurable maximum number of assets that can be registered.
+    MaxAssets,
+
     /// Boolean flag indicating whether the contract is paused.
     PauseFlag,
     /// Monotonically incrementing counter used to assign IDs to pending operations.
