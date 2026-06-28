@@ -1,5 +1,31 @@
+# Build artifacts
 /target
 **/*.wasm
+
+# Test snapshots
 test_snapshots/
+
+# Kiro AI agent files
 .kiro/
+
+# Node
 node_modules/
+
+# Environment / secrets
+.env
+.env.*
+*.pem
+*.key
+
+# IDE
+.vscode/
+.idea/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Soroban identity / wallet files
+identity.json
+*.stellar

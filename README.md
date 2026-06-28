@@ -99,6 +99,15 @@ A **decentralized price oracle aggregator** built on Soroban (Stellar smart cont
 | `AdminChangedEvent` | `set_admin()` | old_admin, new_admin | — |
 | `ContractUpgradedEvent` | `upgrade()` | new_wasm_hash | — |
 
+## Documentation
+
+| Guide | Description |
+|---|---|
+| [Source Onboarding](docs/source-onboarding.md) | How to set up price submission infrastructure and integrate as an oracle source |
+| [Monitoring Setup](docs/monitoring-setup.md) | Event monitoring, metrics, alert thresholds, Grafana dashboard, and runbooks |
+| [Gas Usage Reference](docs/gas-usage.md) | CPU and memory cost per function, scaling analysis, and how to run benchmarks |
+| [Architecture](docs/ARCHITECTURE.md) | Contract architecture and design decisions |
+
 ## Getting Started
 
 ### Prerequisites
