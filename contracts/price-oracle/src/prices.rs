@@ -111,6 +111,8 @@ fn aggregate_asset(env: &Env, asset: &Address, current_ledger: u32, decimals: u3
     let min_required = get_min_sources_required(env);
     let oracle_sources: OracleSources = read_oracle_sources(env);
     let total_sources = oracle_sources.sources.len();
+    let decimals = get_decimals(env);
+    let current_ledger = env.ledger().sequence();
 
     // Issue #93: if MaxAggregationSources > 0 and we have more sources than the cap,
     // randomly select a subset using the current ledger hash for determinism.

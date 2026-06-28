@@ -2,6 +2,7 @@
 
 mod admin;
 mod assets;
+mod cross_reference;
 mod errors;
 mod events;
 mod health;
@@ -1231,9 +1232,272 @@ impl PriceOracleContract {
         timelock::set_timelock_duration(&env, duration);
         reentrancy::exit(&env);
     }
+
+    // --- Relayer ---
+
+    /// Approves a new relayer that can submit prices on behalf of oracle sources.
+    ///
+    /// Relayers are off-chain agents (inspired by IBC Hermes / Egypt) that bundle
+    /// source-signed authorization entries and submit them to the contract. Only the
+    /// admin may grant relayer approval.
+    ///
+    /// # Arguments
+    ///
+    /// * `env` - The Soroban execution environment.
+    /// * `relayer` - Address to be approved as a relayer.
+    /// * `name` - Human-readable display name for the relayer.
+    ///
+    /// # Errors
+    ///
+    /// * [`ErrorCode::NotAuthorized`] — if the caller is not the current admin.
+    /// * [`ErrorCode::RelayerAlreadyExists`] — if `relayer` is already approved.
+    pub fn add_relayer(env: Env, relayer: Address, name: String) {
+        relayer::add_relayer(&env, relayer, name);
+    }
+
+    /// Revokes a relayer's approval, preventing future relayed submissions.
+    ///
+    /// # Arguments
+    ///
+    /// * `env` - The Soroban execution environment.
+    /// * `relayer` - Address of the relayer to revoke.
+    ///
+    /// # Errors
+    ///
+    /// * [`ErrorCode::NotAuthorized`] — if the caller is not the current admin.
+    /// * [`ErrorCode::RelayerNotAuthorized`] — if `relayer` is not currently approved.
+    pub fn remove_relayer(env: Env, relayer: Address) {
+        relayer::remove_relayer(&env, relayer);
+    }
+
+    /// Returns whether the given address is an approved relayer.
+    ///
+    /// # Arguments
+    ///
+    /// * `env` - The Soroban execution environment.
+    /// * `relayer` - Address to query.
+    ///
+    /// # Returns
+    ///
+    /// `true` if `relayer` is approved; `false` otherwise.
+    pub fn is_relayer(env: Env, relayer: Address) -> bool {
+        relayer::is_relayer(&env, relayer)
+    }
+
+    /// Returns the [`RelayerInfo`] metadata for a given relayer, or `None` if not approved.
+    ///
+    /// # Arguments
+    ///
+    /// * `env` - The Soroban execution environment.
+    /// * `relayer` - Address of the relayer to query.
+    ///
+    /// # Returns
+    ///
+    /// `Some(`[`RelayerInfo`]`)` with approval metadata, or `None` if not approved.
+    pub fn get_relayer_info(env: Env, relayer: Address) -> Option<RelayerInfo> {
+        relayer::get_relayer_info(&env, relayer)
+    }
+
+    /// Submits a price for an asset on behalf of an oracle source via an approved relayer.
+    ///
+    /// Both `relayer` and `source` must authorize this invocation. The source creates a
+    /// Soroban [`AuthorizationEntry`] off-chain (pre-signing this exact call with the
+    /// specific arguments), and the relayer bundles it into the transaction alongside its
+    /// own signature.
+    ///
+    /// # Arguments
+    ///
+    /// * `env` - The Soroban execution environment.
+    /// * `relayer` - Approved relayer submitting the transaction.
+    /// * `source` - Registered oracle source whose price data is being relayed.
+    /// * `asset` - Contract address of the asset being priced.
+    /// * `price` - Raw price value scaled by `10^decimals`. Must be > 0.
+    /// * `timestamp` - Unix timestamp (seconds) of the price observation.
+    ///
+    /// # Errors
+    ///
+    /// * [`ErrorCode::ContractPaused`] — contract is paused.
+    /// * [`ErrorCode::RelayerNotAuthorized`] — `relayer` is not admin-approved.
+    /// * [`ErrorCode::SourceNotFound`] — `source` is not a registered oracle source.
+    /// * [`ErrorCode::AssetNotRegistered`] — `asset` is not registered.
+    /// * [`ErrorCode::InvalidPrice`] — `price` is ≤ 0.
+    /// * [`ErrorCode::PriceBelowMinimum`] — `price` is below asset's minimum.
+    /// * [`ErrorCode::InvalidTimestamp`] — `timestamp` is too far in the future.
+    pub fn submit_price_relayed(
+        env: Env,
+        relayer: Address,
+        source: Address,
+        asset: Address,
+        price: i128,
+        timestamp: u64,
+    ) {
+        relayer::submit_price_relayed(&env, relayer, source, asset, price, timestamp);
+    }
+
+    /// Sets the fee (in stroops) accrued to a relayer per successful relayed submission.
+    ///
+    /// Setting `fee` to `0` disables fee accrual. The admin must authorize this call.
+    ///
+    /// # Arguments
+    ///
+    /// * `env` - The Soroban execution environment.
+    /// * `fee` - New fee per submission in stroops.
+    ///
+    /// # Errors
+    ///
+    /// * [`ErrorCode::NotAuthorized`] — if the caller is not the current admin.
+    pub fn set_relayer_fee_per_submission(env: Env, fee: i128) {
+        relayer::set_relayer_fee_per_submission(&env, fee);
+    }
+
+    /// Returns the current fee per relayed submission in stroops. Defaults to `0`.
+    ///
+    /// # Arguments
+    ///
+    /// * `env` - The Soroban execution environment.
+    ///
+    /// # Returns
+    ///
+    /// Fee in stroops. `0` means no fee is currently configured.
+    pub fn get_relayer_fee_per_submission(env: Env) -> i128 {
+        relayer::get_relayer_fee_per_submission(&env)
+    }
+
+    /// Returns the total accumulated fee balance (in stroops) owed to `relayer`.
+    ///
+    /// # Arguments
+    ///
+    /// * `env` - The Soroban execution environment.
+    /// * `relayer` - Address of the relayer to query.
+    ///
+    /// # Returns
+    ///
+    /// Accumulated fee in stroops. `0` if the relayer has never submitted or no fee is set.
+    pub fn get_relayer_fee_balance(env: Env, relayer: Address) -> i128 {
+        relayer::get_relayer_fee_balance(&env, relayer)
+    }
+
+    /// Returns the total number of successful relayed submissions by `relayer`.
+    ///
+    /// # Arguments
+    ///
+    /// * `env` - The Soroban execution environment.
+    /// * `relayer` - Address of the relayer to query.
+    ///
+    /// # Returns
+    ///
+    /// Submission count. `0` if no relayed submissions have been made.
+    pub fn get_relayer_submission_count(env: Env, relayer: Address) -> u64 {
+        relayer::get_relayer_submission_count(&env, relayer)
+    }
+
+    // --- Cross-Reference Oracle ---
+
+    /// Registers an external oracle contract for cross-reference price verification.
+    ///
+    /// The `asset_mapping` maps each of our asset `Address` values to the corresponding
+    /// asset `Address` used by the external oracle. On each
+    /// [`get_cross_reference`](Self::get_cross_reference) call the contract invokes
+    /// `lastprice(asset: Address) -> i128` on the registered oracle and compares the result.
+    ///
+    /// # Arguments
+    ///
+    /// * `env` - The Soroban execution environment.
+    /// * `contract_id` - Contract address of the external reference oracle.
+    /// * `asset_mapping` - Map from our asset addresses to the reference oracle's addresses.
+    ///
+    /// # Errors
+    ///
+    /// * [`ErrorCode::NotAuthorized`] — if the caller is not the current admin.
+    pub fn add_reference_oracle(
+        env: Env,
+        contract_id: Address,
+        asset_mapping: Map<Address, Address>,
+    ) {
+        cross_reference::add_reference_oracle(&env, contract_id, asset_mapping);
+    }
+
+    /// Removes a previously registered reference oracle.
+    ///
+    /// # Arguments
+    ///
+    /// * `env` - The Soroban execution environment.
+    /// * `contract_id` - Contract address of the reference oracle to remove.
+    ///
+    /// # Errors
+    ///
+    /// * [`ErrorCode::NotAuthorized`] — if the caller is not the current admin.
+    pub fn remove_reference_oracle(env: Env, contract_id: Address) {
+        cross_reference::remove_reference_oracle(&env, contract_id);
+    }
+
+    /// Returns all registered reference oracle contract addresses.
+    ///
+    /// # Arguments
+    ///
+    /// * `env` - The Soroban execution environment.
+    ///
+    /// # Returns
+    ///
+    /// A [`Vec`] of `Address` values for all registered reference oracles.
+    pub fn get_reference_oracles(env: Env) -> Vec<Address> {
+        cross_reference::get_reference_oracles(&env)
+    }
+
+    /// Compares our current aggregated price for `asset` against the first registered
+    /// reference oracle that has a mapping for this asset.
+    ///
+    /// If the deviation exceeds the configured threshold a
+    /// [`CrossRefDeviationEvent`](crate::events::CrossRefDeviationEvent) is emitted.
+    ///
+    /// # Arguments
+    ///
+    /// * `env` - The Soroban execution environment.
+    /// * `asset` - Contract address of the asset to check.
+    ///
+    /// # Returns
+    ///
+    /// `Some(`[`CrossReferenceResult`]`)` with both prices and the deviation in basis
+    /// points, or `None` if no local aggregate exists or no reference oracle has a
+    /// mapping for this asset.
+    pub fn get_cross_reference(env: Env, asset: Address) -> Option<CrossReferenceResult> {
+        cross_reference::get_cross_reference(&env, asset)
+    }
+
+    /// Sets the deviation threshold (in basis points) that triggers a
+    /// [`CrossRefDeviationEvent`](crate::events::CrossRefDeviationEvent).
+    ///
+    /// # Arguments
+    ///
+    /// * `env` - The Soroban execution environment.
+    /// * `threshold_bps` - New threshold in basis points (100 bps = 1 %; max `100_000`).
+    ///
+    /// # Errors
+    ///
+    /// * [`ErrorCode::NotAuthorized`] — if the caller is not the current admin.
+    /// * [`ErrorCode::InvalidConfiguration`] — if `threshold_bps > 100_000`.
+    pub fn set_cross_ref_deviation_threshold(env: Env, threshold_bps: u32) {
+        cross_reference::set_cross_ref_deviation_threshold(&env, threshold_bps);
+    }
+
+    /// Returns the current cross-reference deviation threshold in basis points.
+    ///
+    /// # Arguments
+    ///
+    /// * `env` - The Soroban execution environment.
+    ///
+    /// # Returns
+    ///
+    /// Threshold in basis points. Defaults to `500` (5 %).
+    pub fn get_cross_ref_deviation_threshold(env: Env) -> u32 {
+        cross_reference::get_cross_ref_deviation_threshold(&env)
+    }
 }
 
 #[cfg(test)]
 mod test_helpers;
 
 mod test;
+
+#[cfg(test)]
+mod relayer_tests;
