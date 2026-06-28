@@ -455,3 +455,93 @@ pub struct PriceOverrideExpiredEvent {
     pub expiry_ledger: u32,
     pub current_ledger: u32,
 }
+
+/// Emitted when the admin approves a new relayer.
+///
+/// Topics: `relayer`, `admin`
+#[contractevent]
+#[derive(Clone)]
+pub struct RelayerAddedEvent {
+    /// Address of the newly approved relayer.
+    #[topic]
+    pub relayer: Address,
+    /// Address of the admin who approved the relayer.
+    #[topic]
+    pub admin: Address,
+    /// Human-readable display name for the relayer.
+    pub name: String,
+}
+
+/// Emitted when the admin revokes a relayer's approval.
+///
+/// Topics: `relayer`, `admin`
+#[contractevent]
+#[derive(Clone)]
+pub struct RelayerRemovedEvent {
+    /// Address of the relayer whose approval was revoked.
+    #[topic]
+    pub relayer: Address,
+    /// Address of the admin who performed the revocation.
+    #[topic]
+    pub admin: Address,
+}
+
+/// Emitted when an approved relayer successfully submits a price on behalf of a source.
+///
+/// Topics: `asset`, `source`, `relayer`
+#[contractevent]
+#[derive(Clone)]
+pub struct PriceRelayedEvent {
+    /// Address of the asset being priced.
+    #[topic]
+    pub asset: Address,
+    /// Address of the oracle source whose price data was relayed.
+    #[topic]
+    pub source: Address,
+    /// Address of the relayer that submitted the transaction.
+    #[topic]
+    pub relayer: Address,
+    /// Raw price value scaled by `10^decimals`.
+    pub price: i128,
+    /// Unix timestamp (seconds) of the price observation.
+    pub timestamp: u64,
+}
+
+/// Publishes the relayer-fee-changed event.
+///
+/// Uses manual event publishing because `i128` fields in `#[contractevent]` may
+/// trigger edge cases in some tooling.
+///
+/// # Arguments
+///
+/// * `env` - The Soroban execution environment.
+/// * `admin` - Address of the admin who set the new fee.
+/// * `fee` - New fee per submission in stroops.
+#[allow(deprecated)]
+pub fn emit_relayer_fee_set(env: &soroban_sdk::Env, admin: Address, fee: i128) {
+    let sym = soroban_sdk::symbol_short!("rfee");
+    env.events().publish((sym, admin), (fee,));
+}
+
+/// Emitted when a cross-reference check detects that our price deviates from a reference
+/// oracle's price by more than the configured threshold.
+///
+/// Topics: `asset`, `ref_contract`
+#[contractevent]
+#[derive(Clone)]
+pub struct CrossRefDeviationEvent {
+    /// Address of the asset for which the deviation was detected.
+    #[topic]
+    pub asset: Address,
+    /// Contract address of the reference oracle that reported the diverging price.
+    #[topic]
+    pub ref_contract: Address,
+    /// Our current aggregated price for the asset.
+    pub our_price: i128,
+    /// Price reported by the reference oracle.
+    pub ref_price: i128,
+    /// Absolute deviation between the two prices in basis points (1 % = 100 bps).
+    pub deviation_bps: u32,
+    /// Configured deviation threshold (in basis points) that was exceeded.
+    pub threshold_bps: u32,
+}

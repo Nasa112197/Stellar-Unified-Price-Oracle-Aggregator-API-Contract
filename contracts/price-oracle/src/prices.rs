@@ -68,9 +68,20 @@ pub fn submit_price(env: &Env, source: Address, asset: Address, price: i128, tim
     }
     .publish(env);
 
+    do_aggregate(env, &asset);
+}
+
+/// Collects all source submissions for `asset`, computes the aggregate via the configured
+/// method, persists it, records a history entry, and emits the appropriate event.
+///
+/// Called by both `submit_price` (direct submission) and `submit_price_relayed` (relayed
+/// submission) so the aggregation logic is not duplicated.
+pub(crate) fn do_aggregate(env: &Env, asset: &Address) {
     let min_required = get_min_sources_required(env);
     let oracle_sources: OracleSources = read_oracle_sources(env);
     let total_sources = oracle_sources.sources.len();
+    let decimals = get_decimals(env);
+    let current_ledger = env.ledger().sequence();
 
     let mut valid_prices: Vec<i128> = Vec::new(env);
     let mut latest_timestamp: u64 = 0;
@@ -142,7 +153,6 @@ pub fn submit_price(env: &Env, source: Address, asset: Address, price: i128, tim
                 &history_entry,
             );
 
-            // Track ledger in history index for pruning
             let ledgers_key = DataKey::PriceHistoryLedgers(asset.clone());
             let mut ledger_list: soroban_sdk::Vec<u32> = env
                 .storage()
