@@ -25,8 +25,25 @@ pub enum DataKey {
     // --- Admin ---
     /// The contract administrator's address.
     Admin,
-
-    // --- Global config (prefix: Cfg) ---
+    ReentrancyGuard,
+    /// Existence flag for a registered oracle source (`true` when present).
+    Source(Address),
+    /// Existence flag for a registered asset (`true` when present).
+    AssetRegistered(Address),
+    /// Latest [`PriceEntry`] submitted by a specific source for a specific asset.
+    Submission(Address, Address),
+    /// Ledger sequence number of the last submission by a source for an asset.
+    SubmissionLedger(Address, Address),
+    /// Latest [`AggregatePrice`] computed across all contributing sources for an asset.
+    Aggregate(Address),
+    /// [`PriceHistoryEntry`] recorded at a specific ledger for an asset (temporary storage).
+    PriceHistory(Address, u32),
+    /// Ordered list of ledger numbers for which history exists for an asset.
+    PriceHistoryLedgers(Address),
+    /// The [`OracleSources`] registry (list of sources and their metadata).
+    OracleSources,
+    /// Ordered list of all registered asset addresses.
+    RegisteredAssets,
     /// Minimum number of contributing sources required to publish an aggregate price.
     CfgMinSources,
     /// Maximum number of history entries retained per asset before pruning.
@@ -71,30 +88,34 @@ pub enum DataKey {
     AssetMetadata(Address),
     /// Optional minimum accepted price (`i128`) for a registered asset.
     AssetMinPrice(Address),
+    /// Configurable maximum number of assets that can be registered.
+    MaxAssets,
 
-    // --- Price data (prefix: Price) ---
-    /// Latest [`PriceEntry`] submitted by a specific source for a specific asset.
-    Submission(Address, Address),
-    /// Ledger sequence number of the last submission by a source for an asset.
-    PriceSubmissionLedger(Address, Address),
-    /// Latest [`AggregatePrice`] computed across all contributing sources for an asset.
-    Aggregate(Address),
-    /// Active price override for an asset.
-    PriceOverride(Address),
-    /// Flag set when a source's submission deviates excessively from the current aggregate.
-    PriceDeviant(Address, Address),
-
-    // --- History (prefix: Hist via PriceHistory name) ---
-    /// [`PriceHistoryEntry`] recorded at a specific ledger for an asset (temporary storage).
-    PriceHistory(Address, u32),
-    /// Ordered list of ledger numbers for which history exists for an asset.
-    PriceHistoryLedgers(Address),
-
-    // --- Timelock operations (prefix: Tl) ---
+    /// Boolean flag indicating whether the contract is paused.
+    PauseFlag,
     /// Monotonically incrementing counter used to assign IDs to pending operations.
     TlPendingOpCount,
     /// A [`PendingOperation`] awaiting timelock expiry before execution.
-    TlPendingOp(u32),
+    PendingOp(u32),
+    /// Number of ledgers that must pass between proposing and executing a timelock operation.
+    TimelockDuration,
+    PriceOverride(Address),
+    /// Per-asset resolution override in seconds. When set, overrides the contract-wide resolution.
+    AssetResolution(Address),
+    /// Cooldown (in ledgers) between trigger_aggregation calls per asset.
+    AggregationCooldown,
+    /// Ledger of the last trigger_aggregation call per asset.
+    LastAggregationTrigger(Address),
+    /// Minimum submission interval enforcement (in ledgers) for sources.
+    MinSubmissionInterval,
+    /// Last submission ledger per (source, asset) pair — for compliance tracking.
+    LastSubmissionLedger(Address, Address),
+    /// Flag marking a source as non-compliant for a given asset.
+    SourceNonCompliant(Address, Address),
+    /// Counter and storage for pending batch operations.
+    PendingBatchCount,
+    /// A pending batch operation.
+    PendingBatch(u32),
 }
 
 /// A price submission from a single oracle source for a specific asset.
@@ -265,4 +286,28 @@ pub struct AssetMetadata {
     /// Optional override for the number of decimals used by this asset's token contract.
     /// When `None`, the contract-wide decimal setting applies.
     pub decimals: Option<u32>,
+}
+
+/// A single admin operation within a batch, identified by type and its encoded payload.
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
+pub struct BatchOperation {
+    /// Numeric discriminant matching [`OperationType`] (0–7).
+    pub op_type: u32,
+    /// Encoded payload for the operation (same encoding as single [`PendingOperation`]).
+    pub data: Bytes,
+}
+
+/// A pending batch of admin operations waiting for its timelock to expire.
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
+pub struct PendingBatch {
+    /// Unique sequential identifier assigned at proposal time.
+    pub id: u32,
+    /// Address of the admin who proposed the batch.
+    pub proposed_by: Address,
+    /// Ledger when the batch was proposed.
+    pub proposed_ledger: u32,
+    /// Ordered list of operations to execute atomically.
+    pub operations: Vec<BatchOperation>,
 }

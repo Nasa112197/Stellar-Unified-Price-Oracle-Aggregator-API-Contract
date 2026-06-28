@@ -1,9 +1,9 @@
-use soroban_sdk::{panic_with_error, Address, Env, String, Vec};
+use soroban_sdk::{panic_with_error, symbol_short, Address, Bytes, Env, String, Vec};
 
 use crate::admin::get_heartbeat_interval;
 use crate::events::{
-    SourceActiveAgainEvent, SourceAddedEvent, SourceHeartbeatEvent, SourceInactiveEvent,
-    SourceRemovedEvent,
+    emit_admin_action, SourceActiveAgainEvent, SourceAddedEvent, SourceHeartbeatEvent,
+    SourceInactiveEvent, SourceRemovedEvent,
 };
 use crate::storage::{
     get_admin, is_source_inactive as check_source_inactive, mark_source_active,
@@ -11,9 +11,17 @@ use crate::storage::{
 };
 use crate::types::{DataKey, ErrorCode, OracleSources};
 
+const MAX_SOURCE_NAME_LENGTH: u32 = 64;
+
 pub fn add_source(env: &Env, source: Address, name: String) {
     let admin = get_admin(env);
     admin.require_auth();
+    if name.is_empty() {
+        panic_with_error!(env, ErrorCode::SourceNameEmpty);
+    }
+    if name.len() > MAX_SOURCE_NAME_LENGTH {
+        panic_with_error!(env, ErrorCode::SourceNameTooLong);
+    }
     if env
         .storage()
         .persistent()
@@ -38,6 +46,7 @@ pub fn add_source(env: &Env, source: Address, name: String) {
         name: source_name,
     }
     .publish(env);
+    emit_admin_action(env, symbol_short!("add_src"), admin, Bytes::new(env));
 }
 
 pub fn remove_source(env: &Env, source: Address) {
@@ -73,6 +82,7 @@ pub fn remove_source(env: &Env, source: Address) {
         admin: admin.clone(),
     }
     .publish(env);
+    emit_admin_action(env, symbol_short!("rem_src"), admin, Bytes::new(env));
 }
 
 pub fn is_source(env: &Env, source: Address) -> bool {
