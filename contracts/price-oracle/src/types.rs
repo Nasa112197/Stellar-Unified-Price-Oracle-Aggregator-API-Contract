@@ -178,6 +178,9 @@ pub struct PriceHistoryEntry {
     pub ledger: u32,
     /// Number of sources that contributed to this price.
     pub num_sources: u32,
+    /// `true` when this entry was produced by linear interpolation rather than a
+    /// real submission. Consumers should treat interpolated values as estimates.
+    pub is_interpolated: bool,
 }
 
 /// Registry of all authorized oracle sources and their display names.
