@@ -2,6 +2,7 @@
 
 mod admin;
 mod assets;
+mod cross_reference;
 mod errors;
 mod events;
 mod history;
@@ -13,17 +14,21 @@ mod timelock;
 mod types;
 
 #[cfg(test)]
+mod cross_ref_tests;
+
+#[cfg(test)]
 mod override_tests;
 
 #[cfg(test)]
 mod prop_tests;
 
 pub use types::{
-    AggregatePrice, AggregationMethod, Asset, DataKey, ErrorCode, OracleSources, PriceData,
-    PriceEntry, PriceHistoryEntry, PriceOverrideEntry,
+    AggregatePrice, AggregationMethod, Asset, CrossReferenceResult, DataKey, ErrorCode,
+    OracleSources, PriceData, PriceEntry, PriceHistoryEntry, PriceOverrideEntry,
+    ReferenceOracleEntry,
 };
 
-use soroban_sdk::{contract, contractimpl, Address, Env, String, Symbol, Vec};
+use soroban_sdk::{contract, contractimpl, Address, Env, Map, String, Symbol, Vec};
 
 use crate::storage::read_registered_assets;
 
@@ -1021,6 +1026,71 @@ impl PriceOracleContract {
     /// * [`ErrorCode::NotAuthorized`] — if the caller is not the current admin.
     pub fn set_timelock_duration(env: Env, duration: u32) {
         timelock::set_timelock_duration(&env, duration);
+    }
+
+    // --- Cross-Reference Oracle ---
+
+    /// Registers an external oracle as a cross-reference source for price verification.
+    ///
+    /// `asset_mapping` maps each of our asset `Address` values to the equivalent asset
+    /// `Address` accepted by the external oracle's `lastprice` function. Calling
+    /// [`get_cross_reference`](Self::get_cross_reference) will invoke this oracle when
+    /// a mapping exists for the queried asset.
+    ///
+    /// # Errors
+    ///
+    /// * [`ErrorCode::NotAuthorized`] — if the caller is not the current admin.
+    pub fn add_reference_oracle(env: Env, contract_id: Address, asset_mapping: Map<Address, Address>) {
+        cross_reference::add_reference_oracle(&env, contract_id, asset_mapping);
+    }
+
+    /// Removes a previously registered reference oracle.
+    ///
+    /// # Errors
+    ///
+    /// * [`ErrorCode::NotAuthorized`] — if the caller is not the current admin.
+    pub fn remove_reference_oracle(env: Env, contract_id: Address) {
+        cross_reference::remove_reference_oracle(&env, contract_id);
+    }
+
+    /// Returns the ordered list of registered reference oracle contract addresses.
+    pub fn get_reference_oracles(env: Env) -> Vec<Address> {
+        cross_reference::get_reference_oracles(&env)
+    }
+
+    /// Queries our aggregated price for `asset` against the first registered reference
+    /// oracle that has a mapping for it.
+    ///
+    /// Calls `lastprice(mapped_asset)` on the reference oracle via cross-contract
+    /// invocation. Returns `None` when no local aggregate exists, no oracle has a
+    /// mapping for `asset`, or every oracle returned `0`.
+    ///
+    /// Emits [`CrossRefDeviationEvent`](crate::events::CrossRefDeviationEvent) when
+    /// the computed deviation exceeds the configured threshold.
+    pub fn get_cross_reference(env: Env, asset: Address) -> Option<CrossReferenceResult> {
+        cross_reference::get_cross_reference(&env, asset)
+    }
+
+    /// Sets the maximum acceptable price deviation between our oracle and a reference
+    /// oracle, expressed in basis points (100 bps = 1 %).
+    ///
+    /// When the deviation for a given asset exceeds this threshold a
+    /// [`CrossRefDeviationEvent`](crate::events::CrossRefDeviationEvent) is emitted.
+    /// Defaults to `500` (5 %). Values above `100_000` are rejected.
+    ///
+    /// # Errors
+    ///
+    /// * [`ErrorCode::NotAuthorized`] — if the caller is not the current admin.
+    /// * [`ErrorCode::InvalidConfiguration`] — if `threshold_bps > 100_000`.
+    pub fn set_cross_ref_deviation_threshold(env: Env, threshold_bps: u32) {
+        cross_reference::set_cross_ref_deviation_threshold(&env, threshold_bps);
+    }
+
+    /// Returns the current cross-reference deviation threshold in basis points.
+    ///
+    /// Defaults to `500` (5 %) when no value has been configured.
+    pub fn get_cross_ref_deviation_threshold(env: Env) -> u32 {
+        cross_reference::get_cross_ref_deviation_threshold(&env)
     }
 }
 

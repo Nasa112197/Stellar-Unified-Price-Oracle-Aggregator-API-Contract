@@ -455,3 +455,26 @@ pub struct PriceOverrideExpiredEvent {
     pub expiry_ledger: u32,
     pub current_ledger: u32,
 }
+
+/// Emitted when the deviation between our aggregated price and a reference oracle's price
+/// exceeds the configured `cross_ref_deviation_threshold`.
+///
+/// Topics: `asset`, `ref_contract`
+#[contractevent]
+#[derive(Clone)]
+pub struct CrossRefDeviationEvent {
+    /// Address of the asset being compared.
+    #[topic]
+    pub asset: Address,
+    /// Contract address of the reference oracle that reported the divergent price.
+    #[topic]
+    pub ref_contract: Address,
+    /// Our internally-aggregated price for the asset.
+    pub our_price: i128,
+    /// Price returned by the reference oracle.
+    pub ref_price: i128,
+    /// Computed deviation in basis points (100 bps = 1 %).
+    pub deviation_bps: u32,
+    /// Threshold in basis points that was exceeded.
+    pub threshold_bps: u32,
+}

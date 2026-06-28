@@ -68,6 +68,12 @@ pub enum DataKey {
     /// Number of ledgers that must pass between proposing and executing a timelock operation.
     TimelockDuration,
     PriceOverride(Address),
+    /// Stored [`ReferenceOracleEntry`] for a registered external reference oracle.
+    ReferenceOracle(Address),
+    /// Ordered list of registered reference oracle contract addresses.
+    ReferenceOracleList,
+    /// Allowed deviation in basis points before a cross-reference alert is emitted.
+    CrossRefDeviationThreshold,
 }
 
 /// A price submission from a single oracle source for a specific asset.
@@ -238,4 +244,35 @@ pub struct AssetMetadata {
     /// Optional override for the number of decimals used by this asset's token contract.
     /// When `None`, the contract-wide decimal setting applies.
     pub decimals: Option<u32>,
+}
+
+/// Registration record for an external oracle used for cross-price verification.
+///
+/// Stored under [`DataKey::ReferenceOracle`] keyed by the oracle contract address.
+/// `asset_mapping` translates our asset addresses to the equivalent addresses
+/// understood by the external oracle.
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
+pub struct ReferenceOracleEntry {
+    /// Contract address of the external reference oracle.
+    pub contract_id: Address,
+    /// Map from our internal asset address to the asset address used by the reference oracle.
+    pub asset_mapping: Map<Address, Address>,
+}
+
+/// Result returned by [`get_cross_reference`] for a single asset.
+///
+/// Captures both the internally-aggregated price and the external reference price,
+/// along with the computed deviation in basis points (100 bps = 1 %).
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
+pub struct CrossReferenceResult {
+    /// Our internally-aggregated price for the asset.
+    pub our_price: i128,
+    /// Price returned by the reference oracle for the same asset.
+    pub ref_price: i128,
+    /// Absolute deviation between the two prices, expressed in basis points.
+    pub deviation_bps: u32,
+    /// Contract address of the reference oracle that provided `ref_price`.
+    pub ref_contract: Address,
 }
