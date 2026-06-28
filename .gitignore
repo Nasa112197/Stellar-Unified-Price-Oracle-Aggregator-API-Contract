@@ -1,21 +1,24 @@
 # Build artifacts
 /target
+**/target/
+
+# WebAssembly binaries
 **/*.wasm
 
 # Test snapshots
 test_snapshots/
 
-# Kiro AI agent files
+# Kiro AI agent state
 .kiro/
 
-# Node
+# Node.js
 node_modules/
+npm-debug.log*
 
 # Environment / secrets
 .env
 .env.*
-*.pem
-*.key
+!.env.example
 
 # IDE
 .vscode/
@@ -25,7 +28,3 @@ node_modules/
 # OS
 .DS_Store
 Thumbs.db
-
-# Soroban identity / wallet files
-identity.json
-*.stellar
