@@ -456,52 +456,89 @@ pub struct PriceOverrideExpiredEvent {
     pub current_ledger: u32,
 }
 
-/// Emitted when per-asset history is pruned beyond `max_history_per_asset` (issue #94).
-///
-/// Topics: `asset`
+// --- #67: Per-asset resolution ---
+
+/// Emitted when the per-asset resolution is set or cleared.
 #[contractevent]
 #[derive(Clone)]
-pub struct HistoryPerAssetPrunedEvent {
+pub struct AssetResolutionSetEvent {
     #[topic]
     pub asset: Address,
-    /// Ledger removed from the history index.
-    pub pruned_ledger: u32,
-    /// Remaining entry count after pruning.
-    pub remaining: u32,
+    #[topic]
+    pub admin: Address,
+    /// Resolution in seconds (0 = cleared, falls back to contract-wide).
+    pub resolution: u32,
 }
 
-/// Emitted when the `max_history_per_asset` limit is changed (issue #94).
-#[contractevent]
-#[derive(Clone)]
-pub struct MaxHistoryPerAssetChangedEvent {
-    pub value: u32,
-}
+// --- #69: Periodic aggregation trigger ---
 
-/// Emitted when the event-per-call cap is exceeded in a single invocation (issue #92).
-/// The transaction still succeeds; this is a warning only.
-///
-/// Topics: `asset`
+/// Emitted when trigger_aggregation is called and aggregation succeeds.
 #[contractevent]
 #[derive(Clone)]
-pub struct EventLimitWarningEvent {
+pub struct AggregationTriggeredEvent {
     #[topic]
     pub asset: Address,
-    /// Number of events that would have been emitted.
-    pub event_count: u32,
-    /// Configured cap that was exceeded.
-    pub max_events: u32,
+    pub price: i128,
+    pub num_sources: u32,
+    pub triggered_at_ledger: u32,
 }
 
-/// Emitted when the `max_events_per_call` limit is changed (issue #92).
+/// Emitted when the aggregation cooldown is updated.
 #[contractevent]
 #[derive(Clone)]
-pub struct MaxEventsPerCallChangedEvent {
-    pub value: u32,
+pub struct AggregationCooldownChangedEvent {
+    pub cooldown_ledgers: u32,
 }
 
-/// Emitted when the `max_aggregation_sources` limit is changed (issue #93).
+// --- #70: Min submission interval ---
+
+/// Emitted when the minimum submission interval is updated.
 #[contractevent]
 #[derive(Clone)]
-pub struct MaxAggregationSourcesChangedEvent {
-    pub value: u32,
+pub struct MinSubmissionIntervalChangedEvent {
+    pub interval_ledgers: u32,
+}
+
+/// Emitted when a source is flagged as non-compliant for an asset.
+#[contractevent]
+#[derive(Clone)]
+pub struct SourceNonCompliantEvent {
+    #[topic]
+    pub source: Address,
+    #[topic]
+    pub asset: Address,
+    pub last_submission_ledger: u32,
+    pub required_interval: u32,
+}
+
+// --- #68: Batch operations ---
+
+/// Emitted when an admin proposes a new batch of operations.
+#[contractevent]
+#[derive(Clone)]
+pub struct BatchProposedEvent {
+    pub batch_id: u32,
+    pub num_operations: u32,
+    #[topic]
+    pub proposed_by: Address,
+    pub proposed_ledger: u32,
+}
+
+/// Emitted when a batch is successfully executed.
+#[contractevent]
+#[derive(Clone)]
+pub struct BatchExecutedEvent {
+    pub batch_id: u32,
+    pub num_operations: u32,
+    #[topic]
+    pub executed_by: Address,
+}
+
+/// Emitted when a pending batch is cancelled.
+#[contractevent]
+#[derive(Clone)]
+pub struct BatchCancelledEvent {
+    pub batch_id: u32,
+    #[topic]
+    pub cancelled_by: Address,
 }

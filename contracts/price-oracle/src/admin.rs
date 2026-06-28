@@ -12,6 +12,8 @@ use crate::types::{AggregationMethod, DataKey, ErrorCode, OracleSources};
 
 const DEFAULT_MAX_HISTORY: u32 = 100;
 const DEFAULT_MIN_SOURCES: u32 = 1;
+const DEFAULT_MAX_ASSETS: u32 = 100;
+
 const DEFAULT_DECIMALS: u32 = 18;
 pub const DEFAULT_RESOLUTION: u32 = 0;
 pub const DEFAULT_TIMESTAMP_THRESHOLD: u64 = 300; // 5 minutes
@@ -29,6 +31,7 @@ pub const DEFAULT_MAX_AGGREGATION_SOURCES: u32 = 0;
 pub fn initialize(
     env: &Env,
     admin: Address,
+
     min_sources_required: u32,
     max_history_length: u32,
     decimals: u32,
@@ -39,6 +42,9 @@ pub fn initialize(
     }
     if description.len() > MAX_DESCRIPTION_LENGTH {
         panic_with_error!(env, ErrorCode::DescriptionTooLong);
+    }
+    if decimals > 18 {
+        panic_with_error!(env, ErrorCode::InvalidConfiguration);
     }
     admin.require_auth();
     env.storage().persistent().set(&DataKey::Admin, &admin);
@@ -82,6 +88,9 @@ pub fn initialize(
         &DataKey::MaxInvalidSubmissions,
         &DEFAULT_MAX_INVALID_SUBMISSIONS,
     );
+    env.storage()
+        .persistent()
+        .set(&DataKey::MaxAssets, &DEFAULT_MAX_ASSETS);
     env.storage().persistent().set(
         &DataKey::AggregationMethod,
         &(AggregationMethod::Median as u32),
@@ -167,6 +176,9 @@ pub fn get_min_sources_required(env: &Env) -> u32 {
 pub fn set_max_history_length(env: &Env, new_max: u32) {
     let admin = get_admin(env);
     admin.require_auth();
+    if new_max == 0 {
+        panic_with_error!(env, ErrorCode::InvalidConfiguration);
+    }
     env.storage()
         .persistent()
         .set(&DataKey::MaxHistoryLength, &new_max);
@@ -214,6 +226,9 @@ pub fn get_resolution(env: &Env) -> u32 {
 pub fn set_decimals(env: &Env, new_decimals: u32) {
     let admin = get_admin(env);
     admin.require_auth();
+    if new_decimals > 18 {
+        panic_with_error!(env, ErrorCode::InvalidConfiguration);
+    }
     env.storage()
         .persistent()
         .set(&DataKey::Decimals, &new_decimals);
@@ -349,19 +364,16 @@ pub fn get_heartbeat_interval(env: &Env) -> u64 {
         .unwrap_or(DEFAULT_HEARTBEAT_INTERVAL)
 }
 
-// --- Issue #94: per-asset history cap ---
-
-pub fn set_max_history_per_asset(env: &Env, new_max: u32) {
+pub fn set_max_assets(env: &Env, new_max: u32) {
     let admin = get_admin(env);
     admin.require_auth();
     env.storage()
         .persistent()
-        .set(&DataKey::MaxHistoryPerAsset, &new_max);
-    MaxHistoryPerAssetChangedEvent { value: new_max }.publish(env);
+        .set(&DataKey::MaxAssets, &new_max);
 }
 
-pub fn get_max_history_per_asset(env: &Env) -> u32 {
-    let key = DataKey::MaxHistoryPerAsset;
+pub fn get_max_assets(env: &Env) -> u32 {
+    let key = DataKey::MaxAssets;
     if env.storage().persistent().has(&key) {
         env.storage()
             .persistent()
@@ -370,53 +382,5 @@ pub fn get_max_history_per_asset(env: &Env) -> u32 {
     env.storage()
         .persistent()
         .get(&key)
-        .unwrap_or(DEFAULT_MAX_HISTORY_PER_ASSET)
-}
-
-// --- Issue #92: max events per call ---
-
-pub fn set_max_events_per_call(env: &Env, new_max: u32) {
-    let admin = get_admin(env);
-    admin.require_auth();
-    env.storage()
-        .persistent()
-        .set(&DataKey::MaxEventsPerCall, &new_max);
-    MaxEventsPerCallChangedEvent { value: new_max }.publish(env);
-}
-
-pub fn get_max_events_per_call(env: &Env) -> u32 {
-    let key = DataKey::MaxEventsPerCall;
-    if env.storage().persistent().has(&key) {
-        env.storage()
-            .persistent()
-            .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
-    }
-    env.storage()
-        .persistent()
-        .get(&key)
-        .unwrap_or(DEFAULT_MAX_EVENTS_PER_CALL)
-}
-
-// --- Issue #93: max aggregation sources ---
-
-pub fn set_max_aggregation_sources(env: &Env, new_max: u32) {
-    let admin = get_admin(env);
-    admin.require_auth();
-    env.storage()
-        .persistent()
-        .set(&DataKey::MaxAggregationSources, &new_max);
-    MaxAggregationSourcesChangedEvent { value: new_max }.publish(env);
-}
-
-pub fn get_max_aggregation_sources(env: &Env) -> u32 {
-    let key = DataKey::MaxAggregationSources;
-    if env.storage().persistent().has(&key) {
-        env.storage()
-            .persistent()
-            .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
-    }
-    env.storage()
-        .persistent()
-        .get(&key)
-        .unwrap_or(DEFAULT_MAX_AGGREGATION_SOURCES)
+        .unwrap_or(DEFAULT_MAX_ASSETS)
 }
