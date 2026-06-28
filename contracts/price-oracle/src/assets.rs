@@ -1,6 +1,6 @@
-use soroban_sdk::{panic_with_error, Address, Env, Vec};
+use soroban_sdk::{panic_with_error, symbol_short, Address, Bytes, Env, Vec};
 
-use crate::events::{AssetRegisteredEvent, AssetUnregisteredEvent};
+use crate::events::{emit_admin_action, AssetRegisteredEvent, AssetUnregisteredEvent};
 use crate::storage::{
     get_admin, read_registered_assets, write_registered_assets, LEDGER_BUMP, LEDGER_THRESHOLD,
 };
@@ -33,6 +33,7 @@ pub fn register_asset(env: &Env, asset: Address) {
         admin: admin.clone(),
     }
     .publish(env);
+    emit_admin_action(env, symbol_short!("reg_asset"), admin, Bytes::new(env));
 }
 
 pub fn unregister_asset(env: &Env, asset: Address) {
@@ -59,6 +60,7 @@ pub fn unregister_asset(env: &Env, asset: Address) {
         admin: admin.clone(),
     }
     .publish(env);
+    emit_admin_action(env, symbol_short!("unreg_ast"), admin, Bytes::new(env));
 }
 
 pub fn is_asset_registered(env: &Env, asset: Address) -> bool {

@@ -1,4 +1,4 @@
-use soroban_sdk::{contractevent, Address, String};
+use soroban_sdk::{contractevent, symbol_short, Address, Bytes, String, Symbol};
 
 // ContractInitializedEvent uses manual publishing due to String field
 // limitations with the macro in soroban-sdk 26.
