@@ -5,29 +5,23 @@
 # Test snapshots
 test_snapshots/
 
-# Kiro AI agent working directory
+# Kiro AI agent state
 .kiro/
 
-# Node dependencies
+# Node.js
 node_modules/
+npm-debug.log*
 
-# Environment and secrets
+# Environment / secrets
 .env
 .env.*
-*.pem
-*.key
-identity.json
-wallet-keypair.json
+!.env.example
 
-# Soroban CLI cache and config
-.soroban/
+# IDE
+.vscode/
+.idea/
+*.iml
 
-# OS-specific
+# OS
 .DS_Store
 Thumbs.db
-
-# Editor/IDE
-.idea/
-.vscode/
-*.swp
-*.swo
