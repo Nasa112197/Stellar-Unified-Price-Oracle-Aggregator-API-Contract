@@ -48,4 +48,5 @@ pub enum ErrorCode {
     InvalidDuration = 17,
     /// The consumer's subscription has expired.
     SubscriptionExpired = 18,
+    Reentrant = 16,
 }
