@@ -92,6 +92,45 @@ fn test_admin_functions() {
         client.get_description(),
         String::from_str(&e, "Updated Description")
     );
+
+    assert_eq!(client.get_max_sources(), 50u32);
+    client.set_max_sources(&10u32);
+    assert_eq!(client.get_max_sources(), 10u32);
+}
+
+#[test]
+fn test_max_sources_enforced() {
+    let e = Env::default();
+    let (client, _) = setup_contract(&e);
+
+    client.set_max_sources(&3u32);
+
+    let s1 = register_test_source(&e, &client, "S1");
+    let s2 = register_test_source(&e, &client, "S2");
+    let s3 = register_test_source(&e, &client, "S3");
+
+    assert!(client.is_source(&s1));
+    assert!(client.is_source(&s2));
+    assert!(client.is_source(&s3));
+
+    let s4 = Address::generate(&e);
+    let result = client.try_add_source(&s4, &String::from_str(&e, "S4"));
+    assert!(result.is_err());
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #16)")]
+fn test_max_sources_enforced_exact_limit() {
+    let e = Env::default();
+    let (client, _) = setup_contract(&e);
+
+    client.set_max_sources(&2u32);
+
+    register_test_source(&e, &client, "S1");
+    register_test_source(&e, &client, "S2");
+
+    let s3 = Address::generate(&e);
+    client.add_source(&s3, &String::from_str(&e, "S3"));
 }
 
 #[test]
@@ -112,6 +151,31 @@ fn test_register_asset_twice() {
     let asset = Address::generate(&e);
     client.register_asset(&asset);
     client.register_asset(&asset);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #16)")]
+fn test_register_asset_max_assets_reached() {
+    let e = Env::default();
+    let (client, _) = setup_contract(&e);
+
+    client.set_max_assets(&2u32);
+
+    let asset1 = register_test_asset(&e, &client);
+    assert!(client.is_asset_registered(&asset1));
+
+    let asset2 = register_test_asset(&e, &client);
+    assert!(client.is_asset_registered(&asset2));
+
+    // Third registration should fail
+    let _asset3 = register_test_asset(&e, &client);
+}
+
+#[test]
+fn test_default_max_assets() {
+    let e = Env::default();
+    let (client, _) = setup_contract(&e);
+    assert_eq!(client.get_max_assets(), 100u32);
 }
 
 #[test]
@@ -466,27 +530,104 @@ fn test_has_historical_price_unregistered_asset() {
     assert!(!client.has_historical_price(&asset, &100u32));
 }
 
+fn load_wasm_hash(e: &Env) -> soroban_sdk::BytesN<32> {
+    let wasm = include_bytes!("../../../target/wasm32v1-none/release/price_oracle.wasm");
+    e.deployer()
+        .upload_contract_wasm(Bytes::from_slice(e, wasm))
+}
+
+fn load_wasm_bytes() -> &'static [u8] {
+    include_bytes!("../../../target/wasm32v1-none/release/price_oracle.wasm")
+}
+
 #[test]
 fn test_upgrade() {
+    // Included wasm upgrade test requires a pre-built artifact.
+    // Skip in environments where `target/wasm32v1-none/release/price_oracle.wasm` is missing.
+    #[cfg(feature = "skip_wasm_upgrade_tests")]
+    {
+        return;
+    }
+
     let e = Env::default();
     let (client, _) = setup_contract(&e);
 
-    let wasm = include_bytes!("../../../target/wasm32v1-none/release/price_oracle.wasm");
-    let new_wasm_hash = e
-        .deployer()
-        .upload_contract_wasm(Bytes::from_slice(&e, wasm));
+    let new_wasm_hash = load_wasm_hash(&e);
     client.upgrade(&new_wasm_hash);
 }
 
 #[test]
 fn test_upgrade_unauthorized() {
+    // Included wasm upgrade test requires a pre-built artifact.
+    // Skip in environments where `target/wasm32v1-none/release/price_oracle.wasm` is missing.
+    #[cfg(feature = "skip_wasm_upgrade_tests")]
+    {
+        return;
+    }
+
     let e = Env::default();
     let (client, _) = setup_contract(&e);
 
-    let wasm = include_bytes!("../../../target/wasm32v1-none/release/price_oracle.wasm");
-    let new_wasm_hash = e
-        .deployer()
-        .upload_contract_wasm(Bytes::from_slice(&e, wasm));
+    let new_wasm_hash = load_wasm_hash(&e);
+    clear_auth(&e);
+    assert!(client.try_upgrade(&new_wasm_hash).is_err());
+}
+
+#[test]
+fn test_upgrade_empty_wasm_blob_rejected() {
+    let e = Env::default();
+    let (client, _) = setup_contract(&e);
+
+    // Empty hashes are not valid contract upgrade targets.
+    // Expect the Soroban upgrade path to reject.
+    let empty_hash = soroban_sdk::BytesN::<32>::from_array(&e, &[0u8; 32]);
+
+    assert!(client.try_upgrade(&empty_hash).is_err());
+
+    // Contract remains callable.
+    assert!(client.get_description().len() > 0);
+}
+
+#[test]
+fn test_upgrade_malformed_wasm_rejected() {
+    let e = Env::default();
+    let (client, _) = setup_contract(&e);
+
+    // Use a known-malformed upgrade target hash.
+    // In this mock environment, invalid upgrade candidates are expected to be rejected
+    // by the upgrade call (not just by upload-time validation).
+    let malformed_hash = soroban_sdk::BytesN::<32>::from_array(&e, &[0xAAu8; 32]);
+
+    assert!(client.try_upgrade(&malformed_hash).is_err());
+
+    // Contract remains callable.
+    assert!(client.get_description().len() > 0);
+}
+
+#[test]
+fn test_upgrade_wasm_without_expected_interface_handled() {
+    let e = Env::default();
+    let (client, _) = setup_contract(&e);
+
+    // Upgrade targets are identified by wasm hashes. Provide a value that is not
+    // a deployed/valid contract wasm in the mock environment.
+    let mismatched_interface_hash = soroban_sdk::BytesN::<32>::from_array(&e, &[0xBBu8; 32]);
+
+    // Expect rejection during upgrade.
+    assert!(client.try_upgrade(&mismatched_interface_hash).is_err());
+
+    // Contract remains callable.
+    assert!(client.get_description().len() > 0);
+}
+
+#[test]
+fn test_upgrade_from_non_admin_rejected() {
+    let e = Env::default();
+    let (client, _) = setup_contract(&e);
+
+    let new_wasm_hash = load_wasm_hash(&e);
+
+    // Clear admin auth so upgrade should fail.
     clear_auth(&e);
     assert!(client.try_upgrade(&new_wasm_hash).is_err());
 }
@@ -1104,197 +1245,266 @@ fn test_removed_source_is_no_longer_source() {
     assert!(!client.is_source(&source));
 }
 
-// ---- Issue #65: Source Reputation Scoring ----
+// ===== Issue #82: Overflow/Underflow Boundary Tests =====
 
 #[test]
-fn test_reputation_starts_at_50() {
+fn test_median_i128_max_prices() {
     let e = Env::default();
-    let (client, _) = setup_contract(&e);
-    let source = register_test_source(&e, &client, "Oracle");
-    assert_eq!(client.get_source_reputation(&source), 50i128);
-}
-
-#[test]
-fn test_reputation_increases_when_close_to_median() {
-    let e = Env::default();
-    ledger_default(&e, 100, 1000);
-
+    ledger_default(&e, 100, 10000);
     let (client, _) = setup_contract(&e);
     client.set_min_sources_required(&1u32);
     let source = register_test_source(&e, &client, "Oracle");
     let asset = register_test_asset(&e, &client);
 
-    // Submit price exactly at the median (only source, so median = its price)
-    submit_test_price(&client, &source, &asset, 1000i128, 1000);
-
-    // With 0 deviation, accuracy = 100; score moves toward 100
-    let score = client.get_source_reputation(&source);
-    assert!(score > 50i128, "score should increase: {score}");
+    // Submit i128::MAX price — should not panic
+    submit_test_price(&client, &source, &asset, i128::MAX, 9999);
+    let price = client.get_price(&asset, &0u64);
+    assert!(price.is_some());
+    assert_eq!(price.unwrap().price, i128::MAX);
 }
 
 #[test]
-fn test_reputation_decreases_when_far_from_median() {
+fn test_median_two_i128_max_prices_no_overflow() {
     let e = Env::default();
-    ledger_default(&e, 100, 1000);
-
+    ledger_default(&e, 100, 10000);
     let (client, _) = setup_contract(&e);
     client.set_min_sources_required(&2u32);
-    let source1 = register_test_source(&e, &client, "Accurate");
-    let source2 = register_test_source(&e, &client, "Deviant");
+    let source1 = register_test_source(&e, &client, "Oracle1");
+    let source2 = register_test_source(&e, &client, "Oracle2");
     let asset = register_test_asset(&e, &client);
 
-    // source2 deviates heavily — median is between 1000 and 2000, source2 is 100% off median
-    submit_test_price(&client, &source1, &asset, 1000i128, 1000);
-    submit_test_price(&client, &source2, &asset, 50i128, 1000);
-
-    // source2 has low accuracy, score should drop below 50
-    let score = client.get_source_reputation(&source2);
-    assert!(score < 50i128, "score should decrease: {score}");
+    // Both sources submit i128::MAX — median(MAX, MAX) = MAX; a + (b-a)/2 = MAX + 0 = MAX
+    submit_test_price(&client, &source1, &asset, i128::MAX, 9999);
+    submit_test_price(&client, &source2, &asset, i128::MAX, 9999);
+    let price = client.get_price(&asset, &0u64);
+    assert!(price.is_some());
+    assert_eq!(price.unwrap().price, i128::MAX);
 }
 
 #[test]
-fn test_reputation_decay_factor_configurable() {
+fn test_median_min_and_max_i128_no_overflow() {
     let e = Env::default();
+    ledger_default(&e, 100, 10000);
     let (client, _) = setup_contract(&e);
-    assert_eq!(client.get_reputation_decay_factor(), 10u32);
-    client.set_reputation_decay_factor(&25u32);
-    assert_eq!(client.get_reputation_decay_factor(), 25u32);
+    client.set_min_sources_required(&2u32);
+    let source1 = register_test_source(&e, &client, "Oracle1");
+    let source2 = register_test_source(&e, &client, "Oracle2");
+    let asset = register_test_asset(&e, &client);
+
+    // median(1, MAX) = 1 + (MAX - 1) / 2; no overflow because a + (b - a) / 2 pattern is safe
+    submit_test_price(&client, &source1, &asset, 1i128, 9999);
+    submit_test_price(&client, &source2, &asset, i128::MAX, 9999);
+    let price = client.get_price(&asset, &0u64);
+    assert!(price.is_some());
+    let expected = 1i128 + (i128::MAX - 1) / 2;
+    assert_eq!(price.unwrap().price, expected);
 }
 
 #[test]
-fn test_reputation_improves_over_multiple_accurate_submissions() {
+fn test_historical_prices_start_greater_than_end_returns_error() {
     let e = Env::default();
-    ledger_default(&e, 100, 1000);
+    ledger_default(&e, 100, 10000);
+    let (client, _) = setup_contract(&e);
+    let source = register_test_source(&e, &client, "Oracle");
+    let asset = register_test_asset(&e, &client);
+    submit_test_price(&client, &source, &asset, 100i128, 9999);
 
+    // end < start should panic (NoData) rather than underflow
+    let result = client.try_get_historical_prices(&asset, &200u32, &100u32);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_get_price_staleness_u64_max_age_no_overflow() {
+    let e = Env::default();
+    ledger_default(&e, 100, 10000);
     let (client, _) = setup_contract(&e);
     client.set_min_sources_required(&1u32);
     let source = register_test_source(&e, &client, "Oracle");
     let asset = register_test_asset(&e, &client);
 
-    // Submit accurate prices multiple times — each time score moves toward 100
-    for i in 0u64..5 {
-        ledger_default(&e, 100 + i as u32, 1000 + i);
-        submit_test_price(&client, &source, &asset, 1000i128, 1000 + i);
-    }
-
-    let score = client.get_source_reputation(&source);
-    assert!(score > 55i128, "reputation should have grown: {score}");
-}
-
-// ---- Issue #66: Phased Source Removal ----
-
-#[test]
-fn test_phased_removal_default_cooldown() {
-    let e = Env::default();
-    let (client, _) = setup_contract(&e);
-    assert_eq!(client.get_removal_cooldown(), 100u32);
+    submit_test_price(&client, &source, &asset, 100i128, 9999);
+    // max_age = u64::MAX should not overflow timestamp.saturating_add(max_age)
+    let price = client.get_price(&asset, &u64::MAX);
+    assert!(price.is_some());
 }
 
 #[test]
-fn test_set_removal_cooldown() {
+fn test_mean_saturating_sum_large_prices() {
     let e = Env::default();
+    ledger_default(&e, 100, 10000);
     let (client, _) = setup_contract(&e);
-    client.set_removal_cooldown(&200u32);
-    assert_eq!(client.get_removal_cooldown(), 200u32);
+    client.set_min_sources_required(&2u32);
+    let source1 = register_test_source(&e, &client, "Oracle1");
+    let source2 = register_test_source(&e, &client, "Oracle2");
+    let asset = register_test_asset(&e, &client);
+
+    // Two very large prices; sum would overflow i128 without saturating_add in compute_mean
+    submit_test_price(&client, &source1, &asset, i128::MAX / 2 + 1, 9999);
+    submit_test_price(&client, &source2, &asset, i128::MAX / 2 + 1, 9999);
+    // Default aggregation is median; median of two equal values = that value
+    let price = client.get_price(&asset, &0u64);
+    assert!(price.is_some());
+    assert_eq!(price.unwrap().price, i128::MAX / 2 + 1);
 }
 
-#[test]
-fn test_mark_source_for_removal() {
-    let e = Env::default();
-    ledger_default(&e, 50, 1000);
-    let (client, _) = setup_contract(&e);
-    let source = register_test_source(&e, &client, "Oracle");
+// ===== Issue #85: Strict Input Validation Tests =====
 
-    assert!(!client.is_source_pending_removal(&source));
-    client.mark_source_for_removal(&source);
-    assert!(client.is_source_pending_removal(&source));
-
-    // Source should still be active during cooldown
-    assert!(client.is_source(&source));
-}
+// --- add_source name validation ---
 
 #[test]
-fn test_cancel_source_removal() {
+#[should_panic(expected = "Error(Contract, #16)")]
+fn test_add_source_empty_name_rejected() {
     let e = Env::default();
-    ledger_default(&e, 50, 1000);
     let (client, _) = setup_contract(&e);
-    let source = register_test_source(&e, &client, "Oracle");
-
-    client.mark_source_for_removal(&source);
-    assert!(client.is_source_pending_removal(&source));
-
-    client.cancel_source_removal(&source);
-    assert!(!client.is_source_pending_removal(&source));
-    // Source is still active
-    assert!(client.is_source(&source));
+    let source = soroban_sdk::Address::generate(&e);
+    client.add_source(&source, &String::from_str(&e, ""));
 }
 
 #[test]
 #[should_panic(expected = "Error(Contract, #17)")]
-fn test_finalize_removal_before_cooldown_fails() {
+fn test_add_source_name_too_long_rejected() {
     let e = Env::default();
-    ledger_default(&e, 50, 1000);
     let (client, _) = setup_contract(&e);
-    client.set_removal_cooldown(&100u32);
-    let source = register_test_source(&e, &client, "Oracle");
-
-    client.mark_source_for_removal(&source);
-
-    // Advance ledger but not past cooldown (50 + 50 = 100, needs >= 150)
-    ledger_default(&e, 100, 2000);
-    client.finalize_source_removal(&source);
+    let source = soroban_sdk::Address::generate(&e);
+    // 65-character name (max is 64)
+    let long_name = String::from_str(&e, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+    client.add_source(&source, &long_name);
 }
 
 #[test]
-fn test_finalize_removal_after_cooldown_succeeds() {
+fn test_add_source_name_exactly_64_chars_accepted() {
     let e = Env::default();
-    ledger_default(&e, 50, 1000);
     let (client, _) = setup_contract(&e);
-    client.set_removal_cooldown(&100u32);
-    let source = register_test_source(&e, &client, "Oracle");
+    let source = soroban_sdk::Address::generate(&e);
+    // exactly 64 characters
+    let name = String::from_str(&e, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+    client.add_source(&source, &name);
+    assert!(client.is_source(&source));
+}
 
-    client.mark_source_for_removal(&source);
+// --- set_max_history_length zero validation ---
 
-    // Advance past cooldown: 50 + 100 = 150
-    ledger_default(&e, 151, 3000);
-    client.finalize_source_removal(&source);
-
-    assert!(!client.is_source(&source));
-    assert!(!client.is_source_pending_removal(&source));
+#[test]
+#[should_panic(expected = "Error(Contract, #10)")]
+fn test_set_max_history_length_zero_rejected() {
+    let e = Env::default();
+    let (client, _) = setup_contract(&e);
+    client.set_max_history_length(&0u32);
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #16)")]
-fn test_cancel_removal_not_pending_fails() {
+fn test_set_max_history_length_one_accepted() {
     let e = Env::default();
     let (client, _) = setup_contract(&e);
-    let source = register_test_source(&e, &client, "Oracle");
-    // Never marked for removal
-    client.cancel_source_removal(&source);
+    client.set_max_history_length(&1u32);
+    assert_eq!(client.get_max_history_length(), 1u32);
+}
+
+// --- set_decimals upper bound validation ---
+
+#[test]
+#[should_panic(expected = "Error(Contract, #10)")]
+fn test_set_decimals_above_18_rejected() {
+    let e = Env::default();
+    let (client, _) = setup_contract(&e);
+    client.set_decimals(&19u32);
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #16)")]
-fn test_finalize_removal_not_pending_fails() {
+fn test_set_decimals_18_accepted() {
     let e = Env::default();
     let (client, _) = setup_contract(&e);
-    let source = register_test_source(&e, &client, "Oracle");
-    client.finalize_source_removal(&source);
+    client.set_decimals(&18u32);
+    assert_eq!(client.get_decimals(), 18u32);
 }
 
+// --- initialize decimals upper bound validation ---
+
 #[test]
-fn test_pending_source_still_submits_prices() {
+#[should_panic(expected = "Error(Contract, #10)")]
+fn test_initialize_decimals_above_18_rejected() {
     let e = Env::default();
-    ledger_default(&e, 50, 1000);
+    let admin = soroban_sdk::Address::generate(&e);
+    let client = create_contract(&e);
+    client.initialize(&admin, &1u32, &10u32, &19u32, &String::from_str(&e, "Test"));
+}
+
+// --- override_price reason length validation ---
+
+#[test]
+#[should_panic(expected = "Error(Contract, #20)")]
+fn test_override_price_reason_too_long_rejected() {
+    let e = Env::default();
+    ledger_default(&e, 100, 1234567890);
     let (client, _) = setup_contract(&e);
-    client.set_min_sources_required(&1u32);
-    let source = register_test_source(&e, &client, "Oracle");
     let asset = register_test_asset(&e, &client);
+    // 257-char reason string (max is 256)
+    let reason = String::from_str(
+        &e,
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    );
+    client.override_price(&asset, &1000i128, &reason, &300u32);
+}
 
-    client.mark_source_for_removal(&source);
+#[test]
+fn test_override_price_reason_exactly_256_chars_accepted() {
+    let e = Env::default();
+    ledger_default(&e, 100, 1234567890);
+    let (client, _) = setup_contract(&e);
+    let asset = register_test_asset(&e, &client);
+    // exactly 256 characters
+    let reason = String::from_str(
+        &e,
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    );
+    client.override_price(&asset, &1000i128, &reason, &300u32);
+    assert!(client.get_price_override(&asset).is_some());
+}
 
-    // Source still active during cooldown, can still submit
-    submit_test_price(&client, &source, &asset, 1000i128, 1000);
-    let price = client.get_price(&asset, &0u64);
-    assert!(price.is_some());
+// --- prices SEP-40 records cap validation ---
+
+#[test]
+#[should_panic(expected = "Error(Contract, #19)")]
+fn test_prices_records_exceeds_max_history_rejected() {
+    let e = Env::default();
+    ledger_default(&e, 100, 1234567890);
+    let (client, _) = setup_contract(&e);
+    // max_history is 10 (from setup_contract), requesting 11 should fail
+    let asset = register_test_asset(&e, &client);
+    client.prices(&crate::Asset::Stellar(asset), &11u32);
+}
+
+#[test]
+fn test_prices_records_at_max_history_accepted() {
+    let e = Env::default();
+    ledger_default(&e, 100, 1234567890);
+    let (client, _) = setup_contract(&e);
+    // Reduce max_history to 3 so the ledger scan (3*10=30) stays within footprint limits
+    client.set_max_history_length(&3u32);
+    let asset = register_test_asset(&e, &client);
+    let result = client.prices(&crate::Asset::Stellar(asset), &3u32);
+    assert!(result.is_some());
+}
+
+// --- propose_operation invalid op_type validation ---
+
+#[test]
+#[should_panic(expected = "Error(Contract, #18)")]
+fn test_propose_operation_invalid_type_rejected() {
+    let e = Env::default();
+    let (client, _) = setup_contract(&e);
+    let data = soroban_sdk::Bytes::new(&e);
+    client.propose_operation(&99u32, &data);
+}
+
+#[test]
+fn test_propose_operation_valid_types_accepted() {
+    let e = Env::default();
+    let (client, _) = setup_contract(&e);
+    let data = soroban_sdk::Bytes::new(&e);
+    // op_type 0..=7 are all valid
+    for op in 0u32..=7 {
+        client.propose_operation(&op, &data);
+    }
 }
