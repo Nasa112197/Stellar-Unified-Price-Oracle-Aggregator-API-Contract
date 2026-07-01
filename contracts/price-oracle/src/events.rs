@@ -456,6 +456,63 @@ pub struct PriceOverrideExpiredEvent {
     pub current_ledger: u32,
 }
 
+/// Emitted when the query rate limit is updated.
+#[contractevent]
+#[derive(Clone)]
+pub struct QueryRateLimitChangedEvent {
+    /// The new query rate limit value.
+    pub value: u32,
+}
+
+/// Emitted when a rate limit is exceeded for an address.
+///
+/// Topics: `consumer`
+#[contractevent]
+#[derive(Clone)]
+pub struct RateLimitExceededEvent {
+    /// Address that exceeded the rate limit.
+    #[topic]
+    pub consumer: Address,
+    /// Current count of operations.
+    pub current_count: u32,
+    /// The rate limit threshold.
+    pub limit: u32,
+}
+
+/// Emitted when a subscription is created for a consumer.
+///
+/// Topics: `consumer`, `duration`
+#[contractevent]
+#[derive(Clone)]
+pub struct SubscriptionCreatedEvent {
+    /// Address of the consumer who created the subscription.
+    #[topic]
+    pub consumer: Address,
+    /// Duration of the subscription in seconds.
+    #[topic]
+    pub duration: u64,
+}
+
+/// Emitted when a subscription is renewed by a consumer.
+///
+/// Topics: `consumer`
+#[contractevent]
+#[derive(Clone)]
+pub struct SubscriptionRenewedEvent {
+    /// Address of the consumer who renewed the subscription.
+    #[topic]
+    pub consumer: Address,
+}
+
+/// Emitted when a subscription expires for a consumer.
+///
+/// Topics: `consumer`
+#[contractevent]
+#[derive(Clone)]
+pub struct SubscriptionExpiredEvent {
+    /// Address of the consumer whose subscription expired.
+    #[topic]
+    pub consumer: Address,
 // --- #67: Per-asset resolution ---
 
 /// Emitted when the per-asset resolution is set or cleared.
@@ -543,75 +600,44 @@ pub struct BatchCancelledEvent {
     pub cancelled_by: Address,
 }
 
-// --- Admin action audit trail ---
-
-/// Publishes a generic admin-action audit event.
-///
-/// Used by every admin function to emit a consistent audit trail without
-/// requiring a dedicated event struct per operation.
-///
-/// # Arguments
-///
-/// * `env`    - The Soroban execution environment.
-/// * `action` - Short symbol identifying the operation (max 9 chars).
-/// * `admin`  - Address of the admin who performed the action.
-/// * `data`   - Optional encoded payload (may be empty).
-#[allow(deprecated)]
-pub fn emit_admin_action(
-    env: &soroban_sdk::Env,
-    action: soroban_sdk::Symbol,
-    admin: Address,
-    data: Bytes,
-) {
-    let sym = soroban_sdk::symbol_short!("admin_act");
-    env.events().publish((sym, action, admin), (data,));
-}
-
-// --- #112: Storage migration events ---
-
-/// Emitted when a storage migration is started by the admin.
-///
-/// Topics: `admin`
+// #65 reputation events
 #[contractevent]
 #[derive(Clone)]
-pub struct MigrationStartedEvent {
-    /// Address of the admin who initiated the migration.
+pub struct SourceReputationUpdatedEvent {
     #[topic]
-    pub admin: Address,
-    /// Storage version being migrated from.
-    pub from_version: u32,
-    /// Storage version being migrated to.
-    pub to_version: u32,
-    /// Ledger at which the migration was started.
-    pub started_ledger: u32,
+    pub source: Address,
+    pub old_score: i128,
+    pub new_score: i128,
 }
 
-/// Emitted when a migration step is resumed after a pause.
-///
-/// Topics: `admin`
 #[contractevent]
 #[derive(Clone)]
-pub struct MigrationResumedEvent {
-    /// Address of the admin who resumed the migration.
-    #[topic]
-    pub admin: Address,
-    /// Cursor position at which processing will continue.
-    pub cursor: u32,
+pub struct ReputationDecayChangedEvent {
+    pub value: u32,
 }
 
-/// Emitted when the storage migration completes successfully.
-///
-/// Topics: `admin`
+// #66 phased removal events
 #[contractevent]
 #[derive(Clone)]
-pub struct MigrationCompletedEvent {
-    /// Address of the admin who ran the final migration step.
+pub struct SourceMarkedForRemovalEvent {
+    #[topic]
+    pub source: Address,
     #[topic]
     pub admin: Address,
-    /// Storage version that was migrated from.
-    pub from_version: u32,
-    /// New storage version now in effect.
-    pub to_version: u32,
-    /// Total number of items processed during the migration.
-    pub items_processed: u32,
+    pub eligible_at_ledger: u32,
+}
+
+#[contractevent]
+#[derive(Clone)]
+pub struct SourceRemovalCancelledEvent {
+    #[topic]
+    pub source: Address,
+    #[topic]
+    pub admin: Address,
+}
+
+#[contractevent]
+#[derive(Clone)]
+pub struct RemovalCooldownChangedEvent {
+    pub value: u32,
 }
